@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neuro D&D</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="assets/favicon.ico">
+</head>
+<body>
+
+    <main id="app-container">
+
+        <!-- ===== Auth Page (Login/Register) ===== -->
+        <section id="page-auth" class="page">
+            <header>
+                <h1 id="auth-title">Login</h1>
+                <div class="language-switcher">
+                    <button id="lang-en" class="btn btn-secondary">EN</button>
+                    <button id="lang-ru" class="btn btn-secondary">RU</button>
+                </div>
+            </header>
+
+            <!-- Login Form -->
+            <form id="login-form" class="form-container">
+                <div class="form-group">
+                    <label for="login-email" data-i18n="email_label">Email</label>
+                    <input type="email" id="login-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password" data-i18n="password_label">Password</label>
+                    <input type="password" id="login-password" required>
+                </div>
+                <div id="login-error" class="error-message"></div>
+                <button type="submit" class="btn btn-primary" data-i18n="login_button">Login</button>
+                <button type="button" id="switch-to-register-btn" class="link-button" data-i18n="switch_to_register">Don't have an account? Register</button>
+            </form>
+
+            <!-- Register Form (hidden by default) -->
+            <form id="register-form" class="form-container" style="display: none;">
+                 <div class="form-group">
+                    <label for="register-username" data-i18n="username_label">Username</label>
+                    <input type="text" id="register-username" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-email" data-i18n="email_label">Email</label>
+                    <input type="email" id="register-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-password" data-i18n="password_label">Password</label>
+                    <input type="password" id="register-password" required>
+                </div>
+                <div id="register-error" class="error-message"></div>
+                <button type="submit" class="btn btn-primary" data-i18n="register_button">Register</button>
+                <button type="button" id="switch-to-login-btn" class="link-button" data-i18n="switch_to_login">Already have an account? Login</button>
+            </form>
+        </section>
+
+        <!-- ===== Lobby Page ===== -->
+        <section id="page-lobby" class="page">
+            <header>
+                <h1 data-i18n="welcome_message">Welcome</h1>
+                <button id="logout-btn" class="btn btn-secondary" data-i18n="logout_button">Logout</button>
+            </header>
+
+            <h2>My Campaigns</h2>
+            <ul id="campaign-list">
+                <!-- Campaign items will be injected by JS -->
+            </ul>
+            <button id="show-create-campaign-btn" class="btn btn-primary" data-i18n="create_campaign_button">Create New Campaign</button>
+        </section>
+
+        <!-- ===== Create Campaign Page ===== -->
+        <section id="page-create-campaign" class="page">
+            <header>
+                <h1 data-i18n="create_campaign_button">Create Campaign</h1>
+            </header>
+            <form id="create-campaign-form" class="form-container">
+                <div class="form-group">
+                    <label for="campaign-name" data-i18n="campaign_name_label">Campaign Name</label>
+                    <input type="text" id="campaign-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="campaign-tone" data-i18n="campaign_tone_label">Tone</label>
+                    <select id="campaign-tone">
+                        <option value="epic_fantasy" data-i18n="epic_fantasy">Epic Fantasy</option>
+                        <option value="cosmic_horror" data-i18n="cosmic_horror">Cosmic Horror</option>
+                        <option value="noir_detective" data-i18n="noir_detective">Noir Detective</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="campaign-difficulty" data-i18n="campaign_difficulty_label">Difficulty</label>
+                    <select id="campaign-difficulty">
+                        <option value="easy" data-i18n="easy">Easy</option>
+                        <option value="medium" data-i18n="medium" selected>Medium</option>
+                        <option value="hard" data-i18n="hard">Hard</option>
+                    </select>
+                </div>
+                <div id="create-campaign-error" class="error-message"></div>
+                <button type="submit" class="btn btn-primary" data-i18n="start_campaign_button">Start Campaign</button>
+                <button type="button" id="back-to-lobby-btn" class="link-button">Back to Lobby</button>
+            </form>
+        </section>
+
+        <!-- ===== Game Page ===== -->
+        <section id="page-game" class="page">
+            <header>
+                <h1 id="game-campaign-name">Campaign</h1>
+                <button id="game-back-to-lobby-btn" class="btn btn-secondary">Back to Lobby</button>
+            </header>
+            <div class="game-layout">
+                <div class="main-panel">
+                    <div id="journal-log">
+                        <!-- Game messages will be injected here -->
+                    </div>
+                    <form id="action-form" class="action-input-area">
+                        <input type="text" id="action-input" placeholder="What do you do?" data-i18n-placeholder="action_placeholder" required autocomplete="off">
+                        <button type="submit" class="btn btn-primary" data-i18n="send_action_button">Send</button>
+                    </form>
+                </div>
+                <div class="side-panel">
+                    <h3>Dice Roller</h3>
+                    <div id="dice-tray">
+                        <button class="btn btn-secondary" data-dice="4">D4</button>
+                        <button class="btn btn-secondary" data-dice="6">D6</button>
+                        <button class="btn btn-secondary" data-dice="8">D8</button>
+                        <button class="btn btn-secondary" data-dice="10">D10</button>
+                        <button class="btn btn-secondary" data-dice="12">D12</button>
+                        <button class="btn btn-secondary" data-dice="20">D20</button>
+                        <button class="btn btn-secondary" data-dice="100">D100</button>
+                    </div>
+                    <div id="dice-tray-result"></div>
+                    <hr>
+                    <button id="save-checkpoint-btn" class="btn btn-secondary" data-i18n="save_checkpoint_button">Save Checkpoint</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Scripts -->
+    <script src="storage.js"></script>
+    <script src="i18n.js"></script>
+    <script src="api.js"></script>
+    <script src="dice.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

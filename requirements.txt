@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+filelock
+python-dotenv
+google-generativeai
+python-multipart
+# python-multipart is a dependency of fastapi for form data, good to have it explicit.
