@@ -25,12 +25,12 @@ app.add_middleware(
 
 # --- API Routers ---
 # Include all the API endpoints from the /api directory
-app.include_router(auth.router)
-app.include_router(users.router)
-app.include_router(rooms.router)
-app.include_router(campaigns.router)
-app.include_router(dice.router)
-app.include_router(ai.router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
+app.include_router(rooms.router, prefix="/api")
+app.include_router(campaigns.router, prefix="/api")
+app.include_router(dice.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
 
 
 # --- Health Check Endpoint ---
