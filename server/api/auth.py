@@ -58,8 +58,8 @@ async def register_user(request: RegisterRequest):
     # Add to global index
     storage.add_user_to_index(new_user)
 
-    # FastAPI will automatically use the UserProfileResponse model defined in AuthResponse
-    return AuthResponse(user_code=new_user.user_code, profile=new_user)
+    # Pass a dict to AuthResponse, Pydantic will validate it against UserProfileResponse
+    return AuthResponse(user_code=new_user.user_code, profile=new_user.dict())
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -71,8 +71,8 @@ async def login_user(request: LoginRequest):
     if not user_profile or not security.verify_password(request.password, user_profile.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-    # FastAPI will automatically use the UserProfileResponse model defined in AuthResponse
-    return AuthResponse(user_code=user_profile.user_code, profile=user_profile)
+    # Pass a dict to AuthResponse, Pydantic will validate it against UserProfileResponse
+    return AuthResponse(user_code=user_profile.user_code, profile=user_profile.dict())
 
 
 @router.get("/me", response_model=UserProfileResponse)
