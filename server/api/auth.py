@@ -43,23 +43,30 @@ async def register_user(request: RegisterRequest):
     if storage.find_user_by_email(request.email):
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    # For this project, password is not securely hashed. See security.py
     hashed_password = security.hash_password(request.password)
 
     new_user = UserProfile(
         username=request.username,
         email=request.email,
-        # In a real app, you would store the hashed_password
+        hashed_password=hashed_password,
     )
 
     # Create user files
     profile_path = storage.get_user_profile_file(new_user.user_code)
-    storage.write_json(profile_path, new_user.dict())
+    # Exclude hashed_password from the dict sent to the client, but save it to file
+    profile_for_saving = new_user.dict()
+    storage.write_json(profile_path, profile_for_saving)
 
     # Add to global index
     storage.add_user_to_index(new_user)
 
-    return AuthResponse(user_code=new_user.user_code, profile=new_user)
+    # We should not return the hashed password to the client
+    profile_for_response = new_user.dict(exclude={'hashed_password'})
+
+    return AuthResponse(
+        user_code=new_user.user_code,
+        profile=UserProfile(**profile_for_response)
+    )
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -69,15 +76,18 @@ async def login_user(request: LoginRequest):
     """
     user_profile = storage.find_user_by_email(request.email)
     if not user_profile:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-    # In a real app, you would fetch the stored hashed password and verify it.
-    # Since we are not storing it, we can't truly verify.
-    # We will simulate a check.
-    # password_is_correct = security.verify_password(request.password, stored_hashed_password)
-    # For this project, we'll just accept any password if the user exists.
+    if not security.verify_password(request.password, user_profile.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-    return AuthResponse(user_code=user_profile.user_code, profile=user_profile)
+    # We should not return the hashed password to the client
+    profile_for_response = user_profile.dict(exclude={'hashed_password'})
+
+    return AuthResponse(
+        user_code=user_profile.user_code,
+        profile=UserProfile(**profile_for_response)
+    )
 
 
 @router.get("/me", response_model=UserProfile)

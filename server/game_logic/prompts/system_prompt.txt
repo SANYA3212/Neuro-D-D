@@ -34,6 +34,12 @@ At the very end of your entire response, you MUST include a JSON block enclosed 
 - **Example Keys:** `mood` (e.g., "tense", "mysterious", "combat"), `location` (e.g., "dungeon_corridor", "city_square"), `encounter_possible` (boolean), `action_result` (e.g., "success", "partial_success", "failure"), `new_npc_introduced` (string, name of NPC), `item_found` (string, name of item).
 - You do not need to include all keys every time. Only include what is relevant to your last narrative update.
 
+### 5.1. Game Mechanics Integration
+- When a game mechanic is affected (e.g., a player takes damage, finds an item, a status effect is applied), you MUST include this in the structured metadata.
+- **HP Changes:** Use `hp_change`. A negative value means damage, a positive value means healing. e.g., `"hp_change": -5`.
+- **Target:** Always specify the target of the mechanic. For now, you can use the generic `"target": "player"`.
+- **Example for damage:** `{"action_result": "failure", "hp_change": -10, "target": "player"}`
+
 **Full Example of a valid response:**
 > The heavy oak door creaks open, revealing a dusty library. Shelves overflowing with ancient tomes line the walls, and a single, large desk sits in the center of the room. A faint, sweet smell hangs in the air, like old paper and dried herbs. From a high window, a single beam of moonlight illuminates a small, leather-bound book lying open on the desk. The rest of the room is shrouded in shadows.
 >

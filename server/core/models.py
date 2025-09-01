@@ -10,6 +10,7 @@ class UserProfile(BaseModel):
     user_code: str = Field(default_factory=lambda: str(uuid.uuid4()))
     username: str
     email: str # In a real app, this would be validated and kept secure
+    hashed_password: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserSettings(BaseModel):

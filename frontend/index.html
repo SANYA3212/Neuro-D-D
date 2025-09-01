@@ -71,6 +71,8 @@
       login: (email, password) => api.fetchJSON('/auth/login', { method: 'POST', body: { email, password } }),
       getMe: () => api.fetchJSON('/auth/me'),
       getCampaigns: () => api.fetchJSON('/campaigns'),
+      updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
+      getAiCompletion: (campaignId, messages) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages } }),
       // ... другие обертки API можно добавить здесь
     };
 
@@ -79,7 +81,7 @@
       ru: { newGame:"Новая игра", joinRoom:"Войти в комнату", continue:"Продолжить", setPlot:"Задать сюжет",
         settings:"Настройки", howToPlay:"Как играть", profile:"Профиль", logout:"Выйти",
         createRoom:"Создать комнату", joinByCode:"Присоединиться по коду", publicRooms:"Публичные комнаты",
-        noSavedCampaigns:"Нет сохранённых кампаний", startNewGame:"Начать новую игра", campaignName:"Название кампании",
+        noSavedCampaigns:"Нет сохранённых кампаний", startNewGame:"Начать новую игру", campaignName:"Название кампании",
         tone:"Тон повествования", difficulty:"Сложность", players:"Игроки", host:"Хост", ready:"Готов",
         notReady:"Не готов", startGame:"Начать игру", saveCheckpoint:"Сохранить чекпоинт", back:"Назад",
         sceneDescription:"Описание сцены", chat:"Чат", journal:"Журнал", rollD20:"Бросить d20",
@@ -94,7 +96,12 @@
         send:"Отправить", easy:"Легкая", medium:"Средняя", hard:"Сложная", gamesPlayed:"Игр сыграно",
         hoursPlayed:"Часов игры", achievements:"Достижения", recentCampaigns:"Последние кампании",
         welcomeBack:"Добро пожаловать обратно", createYourAccount:"Создайте свой аккаунт", or:"или", rolled:"бросил",
-        error:"Ошибка",
+        error:"Ошибка", you:"Вы", system:"Система", message:"Сообщение...", youJoined:"Вы присоединились к комнате",
+        initiative:"Инициатива", changeAvatar:"Изменить аватар", changeUsername:"Изменить ник", activeMember:"Активный участник",
+        statistics:"Статистика", sound:"Звук", mainVolume:"Основной звук", effectsVolume:"Эффекты",
+        classicDnD:"Классический D&D", epic:"Эпический", dark:"Тёмный", humorous:"Юмористический", rulesFirst:"Минималистичный (rules-first)",
+        attack:"Атаковать", explore:"Исследовать", negotiate:"Переговоры", useItem:"Использовать предмет", rollCube:"Бросить куб",
+        enterAction:"Введите действие...", campaignStart:"Начало кампании", diceRoll:"Бросок куба",
        },
       en: { newGame:"New Game", joinRoom:"Join Room", continue:"Continue", setPlot:"Set Plot", settings:"Settings",
         howToPlay:"How to Play", profile:"Profile", logout:"Logout", createRoom:"Create Room", joinByCode:"Join by Code",
@@ -112,7 +119,13 @@
         registerWith:"Register with", send:"Send", easy:"Easy", medium:"Medium", hard:"Hard",
         gamesPlayed:"Games Played", hoursPlayed:"Hours Played", achievements:"Achievements",
         recentCampaigns:"Recent Campaigns", welcomeBack:"Welcome back", createYourAccount:"Create your account",
-        or:"or", rolled:"rolled", error:"Error" }
+        or:"or", rolled:"rolled", error:"Error", you:"You", system:"System", message:"Message...", youJoined:"You have joined the room",
+        initiative:"Initiative", changeAvatar:"Change Avatar", changeUsername:"Change Nickname", activeMember:"Active member",
+        statistics:"Statistics", sound:"Sound", mainVolume:"Main Volume", effectsVolume:"Effects Volume",
+        classicDnD:"Classic D&D", epic:"Epic", dark:"Dark", humorous:"Humorous", rulesFirst:"Minimalistic (rules-first)",
+        attack:"Attack", explore:"Explore", negotiate:"Negotiate", useItem:"Use Item", rollCube:"Roll Cube",
+        enterAction:"Enter action...", campaignStart:"Campaign Start", diceRoll:"Dice Roll",
+       }
     };
     const t = k => (translations[state.language] && translations[state.language][k]) || k;
 
@@ -191,10 +204,44 @@
         render();
       },1000);
     }
-    function sendAction(text){
-      const action=text.trim(); if(!action) return;
-      state.chatMessages=[...state.chatMessages,{ id:Date.now(), text:action, sender:state.user?.username||'Игрок', timestamp:new Date().toLocaleTimeString() }];
+    async function sendAction(text) {
+      const action = text.trim();
+      if (!action) return;
+
+      const userMessage = { role: 'user', content: action };
+      // Optimistically update the UI with the user's message
+      state.chatMessages.push({ id: Date.now(), text: action, sender: state.user?.username || 'Игрок', timestamp: new Date().toLocaleTimeString() });
+      state.sceneHistory.push(userMessage);
+
+      // Show AI is thinking
+      state.isRolling = true;
       render();
+
+      try {
+        // This needs to be fleshed out with real campaign data
+        const campaignId = state.currentRoom?.id || "temp_campaign_id"; // Placeholder
+        const messagesForApi = state.sceneHistory.map(h => ({ role: h.role, content: h.content }));
+
+        const aiResponse = await api.getAiCompletion(campaignId, messagesForApi);
+
+        const assistantMessage = { role: 'assistant', content: aiResponse.text };
+        state.sceneHistory.push(assistantMessage);
+        state.chatMessages.push({ id: Date.now(), text: aiResponse.text, sender: 'AI-Мастер', timestamp: new Date().toLocaleTimeString() });
+
+        // Handle metadata
+        if (aiResponse.meta) {
+          console.log("AI Metadata:", aiResponse.meta);
+          // TODO: Implement HP changes and other game mechanics based on meta
+        }
+
+      } catch (error) {
+        const errorMessage = { role: 'system', content: `Error from AI: ${error.message}` };
+        state.sceneHistory.push(errorMessage);
+        state.chatMessages.push({ id: Date.now(), text: `Ошибка: ${error.message}`, sender: 'System', timestamp: new Date().toLocaleTimeString() });
+      } finally {
+        state.isRolling = false;
+        render();
+      }
     }
     function themePresets(){ return [
       { name:t('darkTheme'), background:'#000000', primary:'#ff4500', secondary:'#8b0000' },
@@ -407,13 +454,13 @@
             <div class="grid lg:grid-cols-3 gap-8">
               <div class="lg:col-span-1">
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-                  <h3 class="text-2xl font-semibold mb-6">${t('players')} (0/4)</h3>
+                  <h3 class="text-2xl font-semibold mb-6">${t('players')} (${state.currentRoom?.players?.length || 0}/4)</h3>
                   <div class="space-y-4 mb-6">
                     <div class="p-4 bg-gray-800/50 rounded-lg">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-3">
-                          <div class="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full flex items-center justify-center text-sm font-bold">В</div>
-                          <div><p class="font-semibold">Вы</p><span class="text-xs text-purple-400">Хост</span></div>
+                          <div class="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full flex items-center justify-center text-sm font-bold">${state.user?.username?.charAt(0) || 'U'}</div>
+                          <div><p class="font-semibold">${t('you')}</p><span class="text-xs text-purple-400">${t('host')}</span></div>
                         </div>
                         <div class="w-3 h-3 rounded-full bg-red-400"></div>
                       </div>
@@ -437,20 +484,20 @@
                       <div class="space-y-3">
                         <div><label class="block text-sm text-gray-400 mb-1">${t('tone')}</label>
                           <select id="tone" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
-                            <option>Классический D&amp;D</option><option>Эпический</option><option>Тёмный</option><option>Юмористический</option><option>Минималистичный (rules-first)</option>
+                            <option>${t('classicDnD')}</option><option>${t('epic')}</option><option>${t('dark')}</option><option>${t('humorous')}</option><option>${t('rulesFirst')}</option>
                           </select>
                         </div>
                         <div><label class="block text-sm text-gray-400 mb-1">${t('difficulty')}</label>
                           <select id="difficulty" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
-                            <option>Легкая</option><option selected>Средняя</option><option>Сложная</option>
+                            <option>${t('easy')}</option><option selected>${t('medium')}</option><option>${t('hard')}</option>
                           </select>
                         </div>
                       </div>
                     </div>
                     <div>
                       <h3 class="text-lg font-semibold mb-3">${t('chat')}</h3>
-                      <div class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto"><div class="space-y-2 text-sm"><div class="text-[var(--primary)]">Система: Вы присоединились к комнате</div></div></div>
-                      <div class="flex gap-2"><input id="lobbyMsg" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="Сообщение..."><button id="lobbySend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button></div>
+                      <div class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto"><div class="space-y-2 text-sm"><div class="text-[var(--primary)]">${t('system')}: ${t('youJoined')}</div></div></div>
+                      <div class="flex gap-2"><input id="lobbyMsg" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="${t('message')}"><button id="lobbySend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button></div>
                     </div>
                   </div>
                 </div>
@@ -485,17 +532,17 @@
                   <h3 class="text-xl font-semibold mb-4">${t('players')}</h3>
                   <div class="space-y-3">
                     <div class="p-3 bg-gray-800/50 rounded-lg">
-                      <div class="flex justify-between items-start mb-2"><span class="font-semibold">Вы</span><span class="text-xs bg-purple-600 px-2 py-1 rounded">Воин</span></div>
+                      <div class="flex justify-between items-start mb-2"><span class="font-semibold">${t('you')}</span><span class="text-xs bg-purple-600 px-2 py-1 rounded">Воин</span></div>
                       <div class="w-full bg-gray-700 rounded-full h-2"><div class="bg-gradient-to-r from-green-400 to-red-400 h-2 rounded-full" style="width:80%"></div></div>
                       <div class="text-xs text-gray-400 mt-1">24/30 HP</div>
                     </div>
                   </div>
                 </div>
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-                  <h3 class="text-xl font-semibold mb-4">Инициатива</h3>
+                  <h3 class="text-xl font-semibold mb-4">${t('initiative')}</h3>
                   <div class="space-y-2">
                     <div class="p-2 rounded-lg text-sm bg-red-900/50 border border-red-500/50">Дракон <span class="text-gray-400">(18)</span></div>
-                    <div class="p-2 rounded-lg text-sm bg-gray-800/50">Вы <span class="text-gray-400">(15)</span></div>
+                    <div class="p-2 rounded-lg text-sm bg-gray-800/50">${t('you')} <span class="text-gray-400">(15)</span></div>
                   </div>
                 </div>
               </div>
@@ -506,7 +553,7 @@
                     ${state.sceneHistory.length===0?`<div class="text-center py-12 text-gray-500">${t('sceneDescription')}</div>`:
                       state.sceneHistory.map(scene=>`
                         <div class="mb-6 ${scene.aiResponse?'text-[var(--primary)]':'text-white'}">
-                          <p class="text-lg leading-relaxed mb-4">${scene.text}</p>
+                          <p class="text-lg leading-relaxed mb-4">${scene.content}</p>
                           ${scene.image?`<img src="${scene.image}" alt="Сцена" class="w-full h-80 object-cover rounded-lg mb-4">`:''}
                         </div>`).join('')}
                     ${state.isRolling?`
@@ -522,13 +569,13 @@
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
                   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
                     ${[
-                      { label:'Атаковать', icon:'⚔️' }, { label:'Исследовать', icon:'🔍' },
-                      { label:'Переговоры', icon:'💬' }, { label:'Использовать предмет', icon:'🎒' },
-                      { label:'Бросить куб', icon:'🎲' },
+                      { label:t('attack'), icon:'⚔️' }, { label:t('explore'), icon:'🔍' },
+                      { label:t('negotiate'), icon:'💬' }, { label:t('useItem'), icon:'🎒' },
+                      { label:t('rollCube'), icon:'🎲' },
                     ].map(a=>`<button data-quick="${a.label}" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">${a.icon}</div><div>${a.label}</div></button>`).join('')}
                   </div>
                   <div class="flex items-center space-x-2">
-                    <input id="gameInput" type="text" placeholder="Введите действие..." class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3">
+                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3">
                     <button id="gameSend" class="bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 px-6 py-3 rounded-lg font-semibold transition-all">${t('send')}</button>
                   </div>
                 </div>
@@ -547,13 +594,13 @@
                     </div>
                   </div>
                   <div class="p-4 border-t border-gray-800">
-                    <div class="flex gap-2"><input id="chatInput" type="text" placeholder="Сообщение..." class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"><button id="chatSend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-3 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button></div>
+                    <div class="flex gap-2"><input id="chatInput" type="text" placeholder="${t('message')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"><button id="chatSend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-3 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button></div>
                   </div>
                 </div>
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
                   <h3 class="text-xl font-semibold mb-4">${t('journal')}</h3>
                   <div class="space-y-3 text-sm text-gray-300">
-                    <div class="p-3 bg-gray-800/50 rounded-lg"><div class="font-semibold text-[var(--primary)]">Начало кампании</div><div class="text-xs text-gray-500">15:23</div></div>
+                    <div class="p-3 bg-gray-800/50 rounded-lg"><div class="font-semibold text-[var(--primary)]">${t('campaignStart')}</div><div class="text-xs text-gray-500">15:23</div></div>
                   </div>
                 </div>
               </div>
@@ -581,9 +628,9 @@
                   <div class="mt-6 p-4 bg-gray-800/50 rounded-lg">
                     <h4 class="font-semibold mb-3">${t('customTheme')}</h4>
                     <div class="grid grid-cols-3 gap-4">
-                      <div><label class="block text-sm mb-1">Основной</label><input id="cPrimary" type="color" value="${state.customTheme.primary}" class="w-full h-10 cursor-pointer"></div>
-                      <div><label class="block text-sm mb-1">Вторичный</label><input id="cSecondary" type="color" value="${state.customTheme.secondary}" class="w-full h-10 cursor-pointer"></div>
-                      <div><label class="block text-sm mb-1">Фон</label><input id="cBackground" type="color" value="${state.customTheme.background}" class="w-full h-10 cursor-pointer"></div>
+                      <div><label class="block text-sm mb-1">${t('primary')}</label><input id="cPrimary" type="color" value="${state.customTheme.primary}" class="w-full h-10 cursor-pointer"></div>
+                      <div><label class="block text-sm mb-1">${t('secondary')}</label><input id="cSecondary" type="color" value="${state.customTheme.secondary}" class="w-full h-10 cursor-pointer"></div>
+                      <div><label class="block text-sm mb-1">${t('background')}</label><input id="cBackground" type="color" value="${state.customTheme.background}" class="w-full h-10 cursor-pointer"></div>
                     </div>
                   </div>
                 </div>
@@ -597,10 +644,10 @@
                   </div>
                 </div>
                 <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
-                  <h3 class="text-2xl font-semibold mb-4">Звук</h3>
+                  <h3 class="text-2xl font-semibold mb-4">${t('sound')}</h3>
                   <div class="space-y-4">
-                    <div class="flex justify-between items-center"><span>Основной звук</span><input type="range" class="w-40" min="0" max="100"></div>
-                    <div class="flex justify-between items-center"><span>Эффекты</span><input type="range" class="w-40" min="0" max="100"></div>
+                    <div class="flex justify-between items-center"><span>${t('mainVolume')}</span><input type="range" class="w-40" min="0" max="100"></div>
+                    <div class="flex justify-between items-center"><span>${t('effectsVolume')}</span><input type="range" class="w-40" min="0" max="100"></div>
                   </div>
                 </div>
               </div>
@@ -617,16 +664,16 @@
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800 text-center">
                   <div class="w-32 h-32 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full mx-auto mb-4 flex items-center justify-center text-4xl">🎭</div>
                   <h2 class="text-2xl font-bold mb-2">${state.user?.username || 'Игрок'}</h2>
-                  <p class="text-gray-400 mb-6">Активный участник</p>
+                  <p class="text-gray-400 mb-6">${t('activeMember')}</p>
                   <div class="space-y-3">
-                    <button class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded-lg transition-colors">Изменить аватар</button>
-                    <button class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded-lg transition-colors">Изменить ник</button>
+                    <button id="changeAvatarBtn" class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded-lg transition-colors opacity-50 cursor-not-allowed">${t('changeAvatar')}</button>
+                    <button id="changeUsernameBtn" class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded-lg transition-colors">${t('changeUsername')}</button>
                   </div>
                 </div>
               </div>
               <div class="lg:col-span-2 space-y-6">
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-                  <h3 class="text-2xl font-semibold mb-6">Статистика</h3>
+                  <h3 class="text-2xl font-semibold mb-6">${t('statistics')}</h3>
                   <div class="grid md:grid-cols-3 gap-6">
                     <div class="text-center p-4 bg-gray-800/50 rounded-lg"><div class="text-3xl font-bold text-[var(--primary)]">0</div><div class="text-gray-400">${t('gamesPlayed')}</div></div>
                     <div class="text-center p-4 bg-gray-800/50 rounded-lg"><div class="text-3xl font-bold text-[var(--secondary)]">0</div><div class="text-gray-400">${t('hoursPlayed')}</div></div>
@@ -758,6 +805,22 @@
 
       // Tutorial
       on('tutorialStart','click',()=>go('landing'));
+
+      // Profile
+      on('changeUsernameBtn', 'click', handleChangeUsername);
+    }
+
+    async function handleChangeUsername() {
+        const newUsername = prompt("Enter your new username:", state.user.username);
+        if (newUsername && newUsername.trim() !== "") {
+            try {
+                const updatedProfile = await api.updateProfile(newUsername.trim());
+                state.user = updatedProfile;
+                render(); // Re-render to show the new username
+            } catch (error) {
+                alert(`Error updating username: ${error.message}`);
+            }
+        }
     }
 
     // ====== Модалки ======
@@ -844,7 +907,26 @@
     function onIn(root,sel,evt,handler){ const el=qs(sel,root); if(el) el.addEventListener(evt,handler); }
 
     // ====== Старт ======
-    render();
+    async function init() {
+      const userCode = storage.getUserCode();
+      if (userCode) {
+        try {
+          const userProfile = await api.getMe();
+          state.user = userProfile;
+          go('landing');
+        } catch (error) {
+          // Token is invalid or expired
+          storage.removeUserCode();
+          state.user = null;
+          go('login');
+        }
+      } else {
+        go('login');
+      }
+      render(); // Initial render after async check
+    }
+
+    init();
   </script>
 </body>
 </html>

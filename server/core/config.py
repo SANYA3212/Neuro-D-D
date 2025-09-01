@@ -28,6 +28,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash") # Use flash for spe
 # --- Security ---
 # For simplicity, we're not using a complex signing key, but this is where it would go.
 SECRET_KEY = os.getenv("SECRET_KEY", "a_very_secret_default_key_for_dev")
+PASSWORD_SALT = os.getenv("PASSWORD_SALT", "a_not_so_secret_salt_for_dev_passwords")
 
 # --- Ensure directories exist ---
 DATA_DIR.mkdir(exist_ok=True)
