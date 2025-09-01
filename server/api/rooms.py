@@ -3,7 +3,7 @@ import string
 from fastapi import APIRouter, Depends, HTTPException
 
 from server.core import storage
-from server.core.models import Room, CreateRoomRequest, JoinRoomRequest, RoomResponse, UserProfileResponse
+from server.core.models import Room, CreateRoomRequest, JoinRoomRequest, RoomResponse
 from server.api.auth import get_current_user_code
 
 router = APIRouter(prefix="/rooms", tags=["Rooms & Lobby"])
@@ -41,31 +41,14 @@ async def create_room(
 
     return new_room
 
-def get_player_profile(user_code: str) -> UserProfileResponse:
-    """Helper to fetch a user's public profile."""
-    profile_path = storage.get_user_profile_file(user_code)
-    if not profile_path:
-        return None # Or a default profile
-    data = storage.read_json(profile_path)
-    if not data:
-        return None
-    # Manually create the response model to ensure no sensitive data leaks
-    return UserProfileResponse(**data)
-
-@router.get("/{room_code}", response_model=RoomResponse)
+@router.get("/{room_code}", response_model=Room)
 async def get_room_details(room_code: str):
-    """Gets the details of a specific room, including resolved player profiles."""
+    """Gets the details of a specific room."""
     all_rooms = storage.get_all_rooms()
-    room_data = next((r for r in all_rooms if r['room_code'] == room_code.upper()), None)
-    if not room_data:
+    room = next((r for r in all_rooms if r['room_code'] == room_code.upper()), None)
+    if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-
-    player_profiles = [get_player_profile(uc) for uc in room_data.get('players', [])]
-
-    return RoomResponse(
-        **room_data,
-        players=[p for p in player_profiles if p is not None]
-    )
+    return room
 
 @router.get("/public")
 async def list_public_rooms():
@@ -76,7 +59,7 @@ async def list_public_rooms():
     public_rooms = [Room(**r) for r in all_rooms if r.get('is_public')]
     return public_rooms
 
-@router.post("/join", response_model=RoomResponse)
+@router.post("/join")
 async def join_room(
     request: JoinRoomRequest,
     user_code: str = Depends(get_current_user_code)
@@ -85,19 +68,18 @@ async def join_room(
     Allows a user to join an existing room.
     """
     all_rooms = storage.get_all_rooms()
-    room_to_join_data = None
+    room_to_join = None
 
     for r in all_rooms:
         if r['room_code'] == request.room_code.upper():
-            room_to_join_data = r
+            room_to_join = r
             break
 
-    if not room_to_join_data:
+    if not room_to_join:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    if user_code not in room_to_join_data['players']:
-        room_to_join_data['players'].append(user_code)
+    if user_code not in room_to_join['players']:
+        room_to_join['players'].append(user_code)
         storage.write_all_rooms(all_rooms)
 
-    # Fetch and return the full room details
-    return await get_room_details(request.room_code)
+    return {"message": "Successfully joined room", "room_code": request.room_code.upper()}

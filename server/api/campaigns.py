@@ -1,9 +1,6 @@
 import uuid
-import shutil
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Body
-from starlette.responses import Response
-from starlette import status
 
 from server.core import storage
 from server.core.models import (
@@ -127,32 +124,3 @@ async def save_campaign_checkpoint(
     storage.write_json(checkpoint_file, campaign_details.dict())
 
     return {"message": "Checkpoint saved successfully", "file": str(checkpoint_file)}
-
-
-@router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_campaign(
-    campaign_id: str,
-    user_code: str = Depends(get_current_user_code)
-):
-    """Deletes a user's campaign, including all its data."""
-    campaigns_dir = storage.get_campaigns_dir(user_code)
-    if not campaigns_dir:
-        raise HTTPException(status_code=400, detail="Invalid user code.")
-
-    try:
-        uuid.UUID(campaign_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid campaign ID format.")
-
-    campaign_path = campaigns_dir / f"camp_{campaign_id}"
-
-    if not campaign_path.exists() or not campaign_path.is_dir():
-        raise HTTPException(status_code=404, detail="Campaign not found.")
-
-    try:
-        shutil.rmtree(campaign_path)
-    except OSError as e:
-        # Catch potential OS errors during deletion (e.g., permissions)
-        raise HTTPException(status_code=500, detail=f"Failed to delete campaign directory: {e}")
-
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

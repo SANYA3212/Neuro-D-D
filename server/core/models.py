@@ -55,15 +55,6 @@ class Room(BaseModel):
     players: List[str] = [] # List of user_codes
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class RoomResponse(BaseModel):
-    """Full room details including resolved player profiles."""
-    room_code: str
-    host_user_code: str
-    name: Optional[str] = None
-    is_public: bool = False
-    players: List["UserProfileResponse"] = []
-    created_at: datetime
-
 
 # --- API Request/Response Models ---
 
@@ -98,6 +89,9 @@ class CreateRoomRequest(BaseModel):
 class JoinRoomRequest(BaseModel):
     room_code: str
 
+class RoomResponse(BaseModel):
+    room_code: str
+
 # Campaigns
 class CreateCampaignRequest(BaseModel):
     name: str
@@ -121,7 +115,6 @@ class RollRequest(BaseModel):
 class AICompleteRequest(BaseModel):
     campaign_id: str
     messages: List[Message]
-    language: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
 
 class AICompleteResponse(BaseModel):

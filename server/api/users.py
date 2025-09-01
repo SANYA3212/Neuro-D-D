@@ -28,7 +28,7 @@ async def update_user_profile(
     storage.write_json(profile_path, updated_user.dict())
 
     # FastAPI will correctly serialize this to UserProfileResponse
-    return updated_user.dict()
+    return updated_user
 
 
 @router.get("/settings", response_model=UserSettings)
