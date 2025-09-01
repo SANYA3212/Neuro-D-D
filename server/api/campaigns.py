@@ -140,18 +140,19 @@ async def delete_campaign(
         raise HTTPException(status_code=400, detail="Invalid user code.")
 
     try:
-        # Validate campaign_id format
         uuid.UUID(campaign_id)
-        campaign_path = campaigns_dir / f"camp_{campaign_id}"
-
-        if not campaign_path.exists() or not campaign_path.is_dir():
-            raise HTTPException(status_code=404, detail="Campaign not found.")
-
-        shutil.rmtree(campaign_path)
-
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid campaign ID format.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete campaign: {e}")
+
+    campaign_path = campaigns_dir / f"camp_{campaign_id}"
+
+    if not campaign_path.exists() or not campaign_path.is_dir():
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    try:
+        shutil.rmtree(campaign_path)
+    except OSError as e:
+        # Catch potential OS errors during deletion (e.g., permissions)
+        raise HTTPException(status_code=500, detail=f"Failed to delete campaign directory: {e}")
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
