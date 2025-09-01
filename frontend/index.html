@@ -22,7 +22,8 @@
       currentPage: 'landing',
       user: null, // This will hold the user profile object from the backend
       rooms: [],
-      currentRoom: null,
+      currentRoom: null, // Will hold { id, name, players: [{name, hp, max_hp, is_me}], ... }
+      initiativeOrder: [], // Will hold { name, roll }
       sceneHistory: [],
       diceRoll: null,
       isRolling: false,
@@ -72,8 +73,12 @@
       getMe: () => api.fetchJSON('/auth/me'),
       getCampaigns: () => api.fetchJSON('/campaigns'),
       updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
+      updateAvatar: (avatar_url) => api.fetchJSON('/users/profile', { method: 'PUT', body: { avatar_url } }),
       getAiCompletion: (campaignId, messages) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages } }),
-      // ... другие обертки API можно добавить здесь
+      createRoom: (isPublic, name) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name } }),
+      joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
+      getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
+      createCampaign: (name, tone, difficulty) => api.fetchJSON('/campaigns', { method: 'POST', body: { name, tone, difficulty } }),
     };
 
     // ====== Локализация ======
@@ -142,21 +147,45 @@
     function go(page){ state.currentPage = page; render(); }
 
     // ====== Бизнес-логика (интегрированная с API) ======
-    function handleCreateRoom(){
-      if (!state.user) return go('login');
-      // TODO: Заменить на вызов API создания комнаты
-      state.currentRoom = {
-        id: Math.random().toString(36).substr(2,4).toUpperCase(),
-        name:'', players:1, maxPlayers:4, isPublic:true,
-        host: state.user?.username || 'Игрок', status:'waiting'
-      };
-      go('lobby');
+    async function handleStartCampaign(form) {
+        const name = form.querySelector('textarea').value.trim();
+        const tone = form.querySelector('#toneSelect').value;
+        const difficulty = form.querySelector('input[name="difficulty"]:checked').value;
+
+        if (!name) {
+            alert('Please enter a campaign name/plot.');
+            return;
+        }
+
+        try {
+            const newCampaign = await api.createCampaign(name, tone, difficulty);
+            state.currentCampaign = newCampaign;
+
+            // Now create a room associated with this campaign
+            const newRoom = await api.createRoom(true, newCampaign.name);
+            state.currentRoom = newRoom;
+
+            go('lobby');
+        } catch (error) {
+            alert(`${t('error')}: ${error.message}`);
+        }
     }
-    function handleJoinRoom(roomId){
+
+    async function handleCreateRoom(){
+        // This function is now simplified, the main logic is in handleStartCampaign
+        // It's triggered from the landing page for a quick start.
+        go('new-game');
+    }
+    async function handleJoinRoom(roomId){
       if (!state.user) return go('login');
-      // TODO: Заменить на вызов API присоединения к комнате
-      const room = state.rooms.find(r=>r.id===roomId) || { id:roomId, name:'', players:1, maxPlayers:4, host:'Хост' };
-      state.currentRoom = room; go('lobby');
+      try {
+        await api.joinRoom(roomId);
+        const roomDetails = await api.getRoomDetails(roomId);
+        state.currentRoom = roomDetails;
+        go('lobby');
+      } catch (error) {
+         alert(`${t('error')}: ${error.message}`);
+      }
     }
     async function handleLogin(form){
       const email=form.email.value.trim(), password=form.password.value.trim();
@@ -218,8 +247,10 @@
       render();
 
       try {
-        // This needs to be fleshed out with real campaign data
-        const campaignId = state.currentRoom?.id || "temp_campaign_id"; // Placeholder
+        if (!state.currentCampaign?.id) {
+            throw new Error("No active campaign found to send action to.");
+        }
+        const campaignId = state.currentCampaign.id;
         const messagesForApi = state.sceneHistory.map(h => ({ role: h.role, content: h.content }));
 
         const aiResponse = await api.getAiCompletion(campaignId, messagesForApi);
@@ -384,35 +415,37 @@
           <div class="max-w-4xl mx-auto">
             <button id="back" class="mb-8 flex items-center text-[var(--primary)] hover:text-[var(--primary)]/80">← ${t('back')}</button>
             <h2 class="text-4xl font-bold mb-8">${t('newGame')}</h2>
-            <div class="grid lg:grid-cols-2 gap-8">
-              <div class="space-y-6">
-                <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
-                  <h3 class="text-xl font-semibold mb-4">${t('createRoom')}</h3>
-                  <button id="createRoom" class="w-full bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 py-3 rounded-lg font-semibold transition-all">${t('createRoom')}</button>
+            <form id="newGameForm">
+              <div class="grid lg:grid-cols-2 gap-8">
+                <div class="space-y-6">
+                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
+                    <h3 class="text-xl font-semibold mb-4">${t('tone')}</h3>
+                    <select id="toneSelect" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2">
+                      <option value="epic_fantasy">${t('epic')}</option>
+                      <option value="dark_fantasy">${t('dark')}</option>
+                      <option value="humorous">${t('humorous')}</option>
+                    </select>
+                  </div>
+                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
+                    <h3 class="text-xl font-semibold mb-4">${t('difficulty')}</h3>
+                    <div class="space-y-2">
+                      <label class="flex items-center"><input type="radio" name="difficulty" value="easy" class="mr-2"/> ${t('easy')}</label>
+                      <label class="flex items-center"><input type="radio" name="difficulty" value="medium" class="mr-2" checked/> ${t('medium')}</label>
+                      <label class="flex items-center"><input type="radio" name="difficulty" value="hard" class="mr-2"/> ${t('hard')}</label>
+                    </div>
+                  </div>
                 </div>
-                <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
-                  <h3 class="text-xl font-semibold mb-4">${t('tone')}</h3>
-                  <select class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2">
-                    <option>${t('darkTheme')}</option><option>Эпический</option><option>Тёмный</option><option>Юмористический</option><option>Минималистичный (rules-first)</option><option>Классический D&amp;D</option>
-                  </select>
-                </div>
-                <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
-                  <h3 class="text-xl font-semibold mb-4">${t('difficulty')}</h3>
-                  <div class="space-y-2">
-                    <label class="flex items-center"><input type="radio" name="difficulty" class="mr-2" checked/> ${t('easy')}</label>
-                    <label class="flex items-center"><input type="radio" name="difficulty" class="mr-2"/> ${t('medium')}</label>
-                    <label class="flex items-center"><input type="radio" name="difficulty" class="mr-2"/> ${t('hard')}</label>
+                <div class="space-y-6">
+                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
+                    <h3 class="text-xl font-semibold mb-4">${t('setPlot')}</h3>
+                    <textarea placeholder="${t('campaignName')}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 h-48 resize-none"></textarea>
                   </div>
                 </div>
               </div>
-              <div class="space-y-6">
-                <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
-                  <h3 class="text-xl font-semibold mb-4">${t('setPlot')}</h3>
-                  <textarea placeholder="${t('campaignName')}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 h-32 resize-none"></textarea>
-                  <button class="mt-4 bg-[var(--secondary)] hover:bg-[var(--secondary)]/90 px-6 py-2 rounded-lg font-semibold transition-colors">${t('apply')}</button>
-                </div>
+              <div class="mt-8 text-center">
+                 <button type="submit" class="bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 px-8 py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg">${t('createRoom')}</button>
               </div>
-            </div>
+            </form>
           </div>
         </div>`; },
 
@@ -433,19 +466,34 @@
           </div>
         </div>`; },
 
-      'saved-campaigns'(){ return `
+      'saved-campaigns'(){
+        const hasCampaigns = state.campaigns && state.campaigns.length > 0;
+        return `
         <div class="min-h-screen bg-[var(--background)] text-white p-6">
           <div class="max-w-6xl mx-auto">
             <button id="back" class="mb-8 flex items-center text-[var(--primary)] hover:text-[var(--primary)]/80">← ${t('back')}</button>
             <h2 class="text-4xl font-bold mb-8">${t('continue')}</h2>
-            <div class="text-center py-16">
-              <div class="text-6xl mb-4">📁</div>
-              <h3 class="text-2xl font-semibold mb-2">${t('noSavedCampaigns')}</h3>
-              <p class="text-gray-400 mb-6">${t('startNewGame')}</p>
-              <button id="toNewGame" class="bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 px-8 py-3 rounded-lg font-semibold transition-all">${t('newGame')}</button>
-            </div>
+            ${hasCampaigns ? `
+              <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                ${state.campaigns.map(c => `
+                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800 hover:border-[var(--primary)] transition-all cursor-pointer">
+                    <h3 class="text-xl font-bold text-[var(--primary)] truncate">${c.name}</h3>
+                    <p class="text-sm text-gray-400 mt-2">Tone: ${t(c.tone)}</p>
+                    <p class="text-sm text-gray-400">Difficulty: ${t(c.difficulty)}</p>
+                  </div>
+                `).join('')}
+              </div>
+            ` : `
+              <div class="text-center py-16">
+                <div class="text-6xl mb-4">📁</div>
+                <h3 class="text-2xl font-semibold mb-2">${t('noSavedCampaigns')}</h3>
+                <p class="text-gray-400 mb-6">${t('startNewGame')}</p>
+                <button id="toNewGame" class="bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 px-8 py-3 rounded-lg font-semibold transition-all">${t('newGame')}</button>
+              </div>
+            `}
           </div>
-        </div>`; },
+        </div>`;
+      },
 
       lobby(){ const room=state.currentRoom; return `
         <div class="min-h-screen bg-[var(--background)] text-white">
@@ -528,23 +576,8 @@
 
             <div class="grid lg:grid-cols-4 gap-6">
               <div class="lg:col-span-1 space-y-6">
-                <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-                  <h3 class="text-xl font-semibold mb-4">${t('players')}</h3>
-                  <div class="space-y-3">
-                    <div class="p-3 bg-gray-800/50 rounded-lg">
-                      <div class="flex justify-between items-start mb-2"><span class="font-semibold">${t('you')}</span><span class="text-xs bg-purple-600 px-2 py-1 rounded">Воин</span></div>
-                      <div class="w-full bg-gray-700 rounded-full h-2"><div class="bg-gradient-to-r from-green-400 to-red-400 h-2 rounded-full" style="width:80%"></div></div>
-                      <div class="text-xs text-gray-400 mt-1">24/30 HP</div>
-                    </div>
-                  </div>
-                </div>
-                <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-                  <h3 class="text-xl font-semibold mb-4">${t('initiative')}</h3>
-                  <div class="space-y-2">
-                    <div class="p-2 rounded-lg text-sm bg-red-900/50 border border-red-500/50">Дракон <span class="text-gray-400">(18)</span></div>
-                    <div class="p-2 rounded-lg text-sm bg-gray-800/50">${t('you')} <span class="text-gray-400">(15)</span></div>
-                  </div>
-                </div>
+                ${renderPlayers()}
+                ${renderInitiative()}
               </div>
 
               <div class="lg:col-span-2 space-y-6">
@@ -655,18 +688,23 @@
           </div>
         </div>`; },
 
-      profile(){ return `
+      profile(){
+        const avatarDisplay = state.user?.avatar_url
+            ? `<img src="${state.user.avatar_url}" alt="Avatar" class="w-32 h-32 rounded-full object-cover mx-auto mb-4">`
+            : `<div class="w-32 h-32 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full mx-auto mb-4 flex items-center justify-center text-4xl">${state.user?.username?.charAt(0) || '🎭'}</div>`;
+
+        return `
         <div class="min-h-screen bg-[var(--background)] text-white p-6">
           <div class="max-w-4xl mx-auto">
             <button id="back" class="mb-8 flex items-center text-[var(--primary)] hover:text-[var(--primary)]/80">← ${t('back')}</button>
             <div class="grid lg:grid-cols-3 gap-8">
               <div class="lg:col-span-1">
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800 text-center">
-                  <div class="w-32 h-32 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full mx-auto mb-4 flex items-center justify-center text-4xl">🎭</div>
+                  ${avatarDisplay}
                   <h2 class="text-2xl font-bold mb-2">${state.user?.username || 'Игрок'}</h2>
                   <p class="text-gray-400 mb-6">${t('activeMember')}</p>
                   <div class="space-y-3">
-                    <button id="changeAvatarBtn" class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded-lg transition-colors opacity-50 cursor-not-allowed">${t('changeAvatar')}</button>
+                    <button id="changeAvatarBtn" class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded-lg transition-colors">${t('changeAvatar')}</button>
                     <button id="changeUsernameBtn" class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded-lg transition-colors">${t('changeUsername')}</button>
                   </div>
                 </div>
@@ -730,7 +768,14 @@
       on('toRegister','click',()=>go('register'));
       on('btnCreateRoom','click',handleCreateRoom);
       on('btnJoinRoom','click',()=>go('join-room'));
-      on('btnContinue','click',()=>state.user?go('saved-campaigns'):go('login'));
+      on('btnContinue','click',()=> {
+        if (!state.user) return go('login');
+        if (state.campaigns && state.campaigns.length > 0) {
+            go('saved-campaigns');
+        } else {
+            go('new-game');
+        }
+      });
       on('toProfile','click',()=>go('profile'));
       on('toTutorial','click',()=>go('tutorial'));
       on('toSettings','click',()=>go('settings'));
@@ -746,7 +791,8 @@
       on('goLogin','click',()=>go('login'));
 
       // New Game
-      on('createRoom','click',handleCreateRoom);
+      const ngf = qs('#newGameForm');
+      if(ngf) ngf.addEventListener('submit', e => { e.preventDefault(); handleStartCampaign(ngf); });
 
       // Saved campaigns
       on('toNewGame','click',()=>go('new-game'));
@@ -808,6 +854,20 @@
 
       // Profile
       on('changeUsernameBtn', 'click', handleChangeUsername);
+      on('changeAvatarBtn', 'click', handleChangeAvatar);
+    }
+
+    async function handleChangeAvatar() {
+        const newAvatarUrl = prompt("Enter the URL for your new avatar:");
+        if (newAvatarUrl && newAvatarUrl.trim() !== "") {
+            try {
+                const updatedProfile = await api.updateAvatar(newAvatarUrl.trim());
+                state.user = updatedProfile;
+                render(); // Re-render to show the new avatar
+            } catch (error) {
+                alert(`Error updating avatar: ${error.message}`);
+            }
+        }
     }
 
     async function handleChangeUsername() {
@@ -901,6 +961,44 @@
       modal.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>modal.remove()));
     }
 
+    // ====== Вспомогательные рендер-функции ======
+    function renderPlayers() {
+      if (!state.currentRoom?.players || state.currentRoom.players.length === 0) return '';
+      return `
+        <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
+          <h3 class="text-xl font-semibold mb-4">${t('players')}</h3>
+          <div class="space-y-3">
+            ${state.currentRoom.players.map(p => `
+              <div class="p-3 bg-gray-800/50 rounded-lg">
+                <div class="flex justify-between items-start mb-2">
+                  <span class="font-semibold">${p.is_me ? t('you') : p.name}</span>
+                  <span class="text-xs bg-purple-600 px-2 py-1 rounded">${p.class || 'Adventurer'}</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-2">
+                  <div class="bg-gradient-to-r from-green-400 to-red-400 h-2 rounded-full" style="width:${(p.hp / p.max_hp) * 100}%"></div>
+                </div>
+                <div class="text-xs text-gray-400 mt-1">${p.hp} / ${p.max_hp} HP</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+    }
+
+    function renderInitiative() {
+      if (!state.initiativeOrder || state.initiativeOrder.length === 0) return '';
+      return `
+        <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
+          <h3 class="text-xl font-semibold mb-4">${t('initiative')}</h3>
+          <div class="space-y-2">
+            ${state.initiativeOrder.map(c => `
+              <div class="p-2 rounded-lg text-sm ${c.is_current ? 'bg-red-900/50 border border-red-500/50' : 'bg-gray-800/50'}">
+                ${c.name} <span class="text-gray-400">(${c.roll})</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+    }
+
     // ====== Утилиты ======
     function qs(sel,root=document){ return root.querySelector(sel); }
     function on(id,evt,handler){ const el=document.getElementById(id); if(el) el.addEventListener(evt,handler); }
@@ -911,8 +1009,8 @@
       const userCode = storage.getUserCode();
       if (userCode) {
         try {
-          const userProfile = await api.getMe();
-          state.user = userProfile;
+          state.user = await api.getMe();
+          state.campaigns = await api.getCampaigns();
           go('landing');
         } catch (error) {
           // Token is invalid or expired

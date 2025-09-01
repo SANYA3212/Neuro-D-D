@@ -12,7 +12,7 @@ def generate_room_code(length: int = 4) -> str:
     """Generates a short, user-friendly, base36 room code (uppercase letters + digits)."""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-@router.post("", response_model=RoomResponse)
+@router.post("", response_model=Room)
 async def create_room(
     request: CreateRoomRequest,
     user_code: str = Depends(get_current_user_code)
@@ -31,7 +31,7 @@ async def create_room(
     new_room = Room(
         room_code=room_code,
         host_user_code=user_code,
-        name=request.name,
+        name=request.name or f"Room {room_code}",
         is_public=request.is_public,
         players=[user_code] # Host is the first player
     )
@@ -39,7 +39,16 @@ async def create_room(
     all_rooms.append(new_room.dict())
     storage.write_all_rooms(all_rooms)
 
-    return RoomResponse(room_code=new_room.room_code)
+    return new_room
+
+@router.get("/{room_code}", response_model=Room)
+async def get_room_details(room_code: str):
+    """Gets the details of a specific room."""
+    all_rooms = storage.get_all_rooms()
+    room = next((r for r in all_rooms if r['room_code'] == room_code.upper()), None)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
 
 @router.get("/public")
 async def list_public_rooms():

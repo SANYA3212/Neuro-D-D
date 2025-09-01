@@ -3,16 +3,16 @@ from pydantic import BaseModel
 from typing import Optional
 
 from server.core import storage
-from server.core.models import UserSettings, UserProfile
+from server.core.models import UserSettings, UserProfile, UserProfileResponse
 from server.api.auth import get_current_user_code, get_current_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
-    # avatar_url: Optional[str] = None # Placeholder for avatar update
+    avatar_url: Optional[str] = None
 
-@router.put("/profile", response_model=UserProfile)
+@router.put("/profile", response_model=UserProfileResponse)
 async def update_user_profile(
     request: UpdateProfileRequest,
     current_user: UserProfile = Depends(get_current_user)
@@ -27,8 +27,8 @@ async def update_user_profile(
 
     storage.write_json(profile_path, updated_user.dict())
 
-    # Return profile without hashed password
-    return updated_user.dict(exclude={'hashed_password'})
+    # FastAPI will correctly serialize this to UserProfileResponse
+    return updated_user
 
 
 @router.get("/settings", response_model=UserSettings)

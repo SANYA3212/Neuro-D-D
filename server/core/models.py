@@ -11,6 +11,7 @@ class UserProfile(BaseModel):
     username: str
     email: str # In a real app, this would be validated and kept secure
     hashed_password: str
+    avatar_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserSettings(BaseModel):
@@ -73,6 +74,7 @@ class UserProfileResponse(BaseModel):
     user_code: str
     username: str
     email: str
+    avatar_url: Optional[str] = None
     created_at: datetime
 
 class AuthResponse(BaseModel):
