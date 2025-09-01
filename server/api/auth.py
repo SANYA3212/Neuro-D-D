@@ -80,4 +80,4 @@ async def get_user_me(current_user: UserProfile = Depends(get_current_user)):
     """
     Returns the profile of the currently authenticated user.
     """
-    return current_user
+    return current_user.dict()
