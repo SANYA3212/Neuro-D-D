@@ -1,4 +1,9 @@
 {
-  "users": {},
+  "users": {
+    "test.user@example.com": {
+      "user_code": "d4caf895-c0e4-4017-a40d-b86077f5cea7",
+      "username": "test.user"
+    }
+  },
   "campaigns": {}
 }

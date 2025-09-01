@@ -55,6 +55,9 @@ async def get_ai_completion(
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="System prompt file not found.")
 
+    # Determine which language to use: from the request or fallback to user settings
+    language_to_use = request.language or user_settings.language
+
     # 2. Construct the prompt
     # The user already sends the message history, we just prepend the system prompt
     # and provide context variables.
@@ -66,7 +69,7 @@ async def get_ai_completion(
 - Campaign Name: {campaign_details.meta.name}
 - Tone: {campaign_details.meta.tone}
 - Difficulty: {campaign_details.meta.difficulty}
-- Language: {user_settings.language}
+- Language: {language_to_use}
 ---
 """
 

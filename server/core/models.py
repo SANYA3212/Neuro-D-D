@@ -121,6 +121,7 @@ class RollRequest(BaseModel):
 class AICompleteRequest(BaseModel):
     campaign_id: str
     messages: List[Message]
+    language: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
 
 class AICompleteResponse(BaseModel):

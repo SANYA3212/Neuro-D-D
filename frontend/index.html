@@ -44,6 +44,7 @@
       customTheme: { primary: '#ff4500', secondary: '#8b0000', background: '#000000' },
       chatMessages: [],
       lobbyReady: false,
+      pollingIntervalId: null,
     };
 
     // ====== Хранилище и API ======
@@ -86,7 +87,7 @@
       getCampaigns: () => api.fetchJSON('/campaigns'),
       updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
       updateAvatar: (avatar_url) => api.fetchJSON('/users/profile', { method: 'PUT', body: { avatar_url } }),
-      getAiCompletion: (campaignId, messages) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages } }),
+      getAiCompletion: (payload) => api.fetchJSON('/ai/complete', { method: 'POST', body: payload }),
       createRoom: (isPublic, name) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name } }),
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
@@ -118,7 +119,34 @@
     ];}
 
     // ====== Навигация и Рендер ======
-    function go(page) { state.currentPage = page; render(); }
+    function go(page) {
+      // Clear any existing poll when we navigate away from a page
+      if (state.pollingIntervalId) {
+          clearInterval(state.pollingIntervalId);
+          state.pollingIntervalId = null;
+      }
+
+      state.currentPage = page;
+      render(); // This will now render the new page
+
+      // If the new page is the lobby, start polling for updates
+      if (page === 'lobby' && state.currentRoom?.room_code) {
+          state.pollingIntervalId = setInterval(async () => {
+              try {
+                  const roomDetails = await api.getRoomDetails(state.currentRoom.room_code);
+                  // Only re-render if the player list has actually changed
+                  if (JSON.stringify(state.currentRoom.players) !== JSON.stringify(roomDetails.players)) {
+                      state.currentRoom = roomDetails;
+                      render();
+                  }
+              } catch (error) {
+                  console.error("Lobby polling failed:", error);
+                  clearInterval(state.pollingIntervalId);
+                  state.pollingIntervalId = null;
+              }
+          }, 3000); // Poll every 3 seconds
+      }
+    }
 
     function render() {
       applyTheme();
@@ -203,7 +231,12 @@
         try {
             if (!state.currentCampaign?.id) throw new Error("No active campaign found.");
             const messagesForApi = state.sceneHistory.map(h => ({ role: h.role, content: h.content }));
-            const aiResponse = await api.getAiCompletion(state.currentCampaign.id, messagesForApi);
+            const payload = {
+                campaign_id: state.currentCampaign.id,
+                messages: messagesForApi,
+                language: state.language,
+            };
+            const aiResponse = await api.getAiCompletion(payload);
             const assistantMessage = { role: 'assistant', content: aiResponse.text };
             state.sceneHistory.push(assistantMessage);
             state.chatMessages.push({ id: Date.now(), text: aiResponse.text, sender: 'AI-Мастер', timestamp: new Date().toLocaleTimeString() });
