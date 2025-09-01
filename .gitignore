@@ -1,0 +1,17 @@
+# Virtual environment
+.venv/
+venv/
+**/__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# IDE / Editor specific
+.vscode/
+.idea/
+
+# Data files (optional, but good practice for a public repo)
+# data/users/
+# data/rooms.json
+# data/index.json

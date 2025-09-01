@@ -1,0 +1,2 @@
+# This file ensures the 'users' directory is tracked by Git.
+# User data will be stored in subdirectories here, e.g., user_uuid/profile.json
