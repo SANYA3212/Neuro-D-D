@@ -13,7 +13,7 @@
     .dark body{ background-color:var(--background); }
   </style>
 </head>
-<body class="min-h-screen text-white">
+<body class="min-h-screen">
   <div id="app"></div>
 
   <script>
@@ -22,7 +22,7 @@
       currentPage: 'landing',
       user: null, // This will hold the user profile object from the backend
       rooms: [],
-      currentRoom: null, // Will hold { id, name, players: [{name, hp, max_hp, is_me}], ... }
+      currentRoom: null, // Will hold a Room object from the backend
       initiativeOrder: [], // Will hold { name, roll }
       sceneHistory: [],
       diceRoll: null,
@@ -33,6 +33,7 @@
       language: 'ru',
       customTheme: { primary:'#ff4500', secondary:'#8b0000', background:'#000000' },
       chatMessages: [],
+      lobbyPollInterval: null,
     };
 
     // ====== Хранилище и API ======
@@ -40,6 +41,18 @@
       getUserCode: () => localStorage.getItem('user_code'),
       saveUserCode: (code) => localStorage.setItem('user_code', code),
       removeUserCode: () => localStorage.removeItem('user_code'),
+      getSettings: () => {
+        const settings = localStorage.getItem('settings');
+        try {
+          return settings ? JSON.parse(settings) : null;
+        } catch (e) {
+          console.error("Could not parse settings", e);
+          return null;
+        }
+      },
+      saveSettings: (settings) => {
+        localStorage.setItem('settings', JSON.stringify(settings));
+      },
     };
 
     const api = {
@@ -79,6 +92,8 @@
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
       createCampaign: (name, tone, difficulty) => api.fetchJSON('/campaigns', { method: 'POST', body: { name, tone, difficulty } }),
+      getCampaignDetails: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`),
+      deleteCampaign: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`, { method: 'DELETE' }),
     };
 
     // ====== Локализация ======
@@ -107,6 +122,7 @@
         classicDnD:"Классический D&D", epic:"Эпический", dark:"Тёмный", humorous:"Юмористический", rulesFirst:"Минималистичный (rules-first)",
         attack:"Атаковать", explore:"Исследовать", negotiate:"Переговоры", useItem:"Использовать предмет", rollCube:"Бросить куб",
         enterAction:"Введите действие...", campaignStart:"Начало кампании", diceRoll:"Бросок куба",
+        delete: "Удалить",
        },
       en: { newGame:"New Game", joinRoom:"Join Room", continue:"Continue", setPlot:"Set Plot", settings:"Settings",
         howToPlay:"How to Play", profile:"Profile", logout:"Logout", createRoom:"Create Room", joinByCode:"Join by Code",
@@ -130,6 +146,7 @@
         classicDnD:"Classic D&D", epic:"Epic", dark:"Dark", humorous:"Humorous", rulesFirst:"Minimalistic (rules-first)",
         attack:"Attack", explore:"Explore", negotiate:"Negotiate", useItem:"Use Item", rollCube:"Roll Cube",
         enterAction:"Enter action...", campaignStart:"Campaign Start", diceRoll:"Dice Roll",
+        delete: "Delete",
        }
     };
     const t = k => (translations[state.language] && translations[state.language][k]) || k;
@@ -139,14 +156,69 @@
       document.documentElement.style.setProperty('--primary', state.customTheme.primary);
       document.documentElement.style.setProperty('--secondary', state.customTheme.secondary);
       document.documentElement.style.setProperty('--background', state.customTheme.background);
-      if (state.theme==='dark') document.documentElement.classList.add('dark');
-      else document.documentElement.classList.remove('dark');
+
+      // Manage dark/light mode classes for Tailwind and custom text color
+      if (state.theme === 'light'){
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('text-white');
+        document.body.classList.add('text-black');
+      } else { // 'dark' or other themes are assumed to be dark backgrounds
+        document.documentElement.classList.add('dark');
+        document.body.classList.remove('text-black');
+        document.body.classList.add('text-white');
+      }
     }
 
     // ====== Навигация ======
-    function go(page){ state.currentPage = page; render(); }
+    function go(page){
+      // Stop polling if we are leaving the lobby
+      if (state.currentPage === 'lobby' && page !== 'lobby' && state.lobbyPollInterval) {
+        clearInterval(state.lobbyPollInterval);
+        state.lobbyPollInterval = null;
+      }
+
+      state.currentPage = page;
+      render();
+
+      // Start polling if we have entered the lobby page
+      if (page === 'lobby' && !state.lobbyPollInterval) {
+        startLobbyPolling();
+      }
+    }
 
     // ====== Бизнес-логика (интегрированная с API) ======
+    function startLobbyPolling() {
+      // Clear any existing interval to be safe
+      if (state.lobbyPollInterval) clearInterval(state.lobbyPollInterval);
+
+      state.lobbyPollInterval = setInterval(async () => {
+        if (!state.currentRoom?.room_code) {
+          clearInterval(state.lobbyPollInterval);
+          state.lobbyPollInterval = null;
+          return;
+        }
+        try {
+          const roomDetails = await api.getRoomDetails(state.currentRoom.room_code);
+          const hasChanged = JSON.stringify(state.currentRoom.players) !== JSON.stringify(roomDetails.players);
+
+          if (hasChanged) {
+            state.currentRoom = roomDetails;
+            if (state.currentPage === 'lobby') {
+              render();
+            }
+          }
+        } catch (error) {
+          console.error("Lobby polling failed:", error);
+          clearInterval(state.lobbyPollInterval);
+          state.lobbyPollInterval = null;
+          if (state.currentPage === 'lobby') {
+              alert(t('error') + ": " + error.message);
+              go('landing');
+          }
+        }
+      }, 3000); // Poll every 3 seconds
+    }
+
     async function handleStartCampaign(form) {
         const name = form.querySelector('textarea').value.trim();
         const tone = form.querySelector('#toneSelect').value;
@@ -185,6 +257,35 @@
         go('lobby');
       } catch (error) {
          alert(`${t('error')}: ${error.message}`);
+      }
+    }
+
+    async function handleContinueGame(campaignId) {
+      try {
+        const campaignDetails = await api.getCampaignDetails(campaignId);
+        state.currentCampaign = campaignDetails.meta;
+        state.sceneHistory = campaignDetails.journal.entries;
+
+        // Create a new room for this continued session
+        const newRoom = await api.createRoom(true, campaignDetails.meta.name);
+        state.currentRoom = newRoom;
+
+        go('lobby');
+      } catch (error) {
+        alert(`${t('error')}: ${error.message}`);
+      }
+    }
+
+    async function handleDeleteGame(campaignId) {
+      try {
+        await api.deleteCampaign(campaignId);
+        // Refresh the campaign list from the server
+        state.campaigns = await api.getCampaigns();
+        if (state.currentPage === 'saved-campaigns') {
+            render(); // Re-render the page to show the campaign is gone
+        }
+      } catch (error) {
+        alert(`${t('error')}: ${error.message}`);
       }
     }
     async function handleLogin(form){
@@ -476,10 +577,17 @@
             ${hasCampaigns ? `
               <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 ${state.campaigns.map(c => `
-                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800 hover:border-[var(--primary)] transition-all cursor-pointer">
-                    <h3 class="text-xl font-bold text-[var(--primary)] truncate">${c.name}</h3>
-                    <p class="text-sm text-gray-400 mt-2">Tone: ${t(c.tone)}</p>
-                    <p class="text-sm text-gray-400">Difficulty: ${t(c.difficulty)}</p>
+                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800 flex flex-col justify-between">
+                    <div>
+                      <h3 class="text-xl font-bold text-[var(--primary)] truncate mb-2">${c.name}</h3>
+                      <p class="text-sm text-gray-400">Tone: ${t(c.tone)}</p>
+                      <p class="text-sm text-gray-400">Difficulty: ${t(c.difficulty)}</p>
+                      <p class="text-sm text-gray-400">Created: ${new Date(c.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div class="mt-4 flex gap-2">
+                      <button data-campaign-id-continue="${c.id}" class="flex-1 bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold text-sm transition-colors">${t('continue')}</button>
+                      <button data-campaign-id-delete="${c.id}" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-semibold text-sm transition-colors">${t('delete')}</button>
+                    </div>
                   </div>
                 `).join('')}
               </div>
@@ -495,24 +603,38 @@
         </div>`;
       },
 
-      lobby(){ const room=state.currentRoom; return `
+      lobby(){ const room=state.currentRoom;
+        const playersHTML = (room?.players && state.user) ? room.players.map(playerCode => {
+            const isMe = playerCode === state.user.user_code;
+            // TODO: This is a temporary fix. The backend should return player usernames.
+            const username = isMe ? state.user.username : `User ${playerCode.substring(0, 4)}`;
+            const isHost = playerCode === room.host_user_code;
+            return `
+              <div class="p-4 bg-gray-800/50 rounded-lg">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-sm font-bold">${username.charAt(0).toUpperCase()}</div>
+                    <div>
+                      <p class="font-semibold">${isMe ? `${t('you')} (${username})` : username}</p>
+                      ${isHost ? `<span class="text-xs text-purple-400">${t('host')}</span>` : ''}
+                    </div>
+                  </div>
+                  <div class="w-3 h-3 rounded-full bg-green-500" title="Ready"></div>
+                </div>
+              </div>
+            `;
+          }).join('') : '<p>Loading players...</p>';
+
+        return `
         <div class="min-h-screen bg-[var(--background)] text-white">
           <div class="container mx-auto px-6 py-8">
             <button id="back" class="mb-6 flex items-center text-[var(--primary)] hover:text-[var(--primary)]/80">← ${t('back')}</button>
             <div class="grid lg:grid-cols-3 gap-8">
               <div class="lg:col-span-1">
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-                  <h3 class="text-2xl font-semibold mb-6">${t('players')} (${state.currentRoom?.players?.length || 0}/4)</h3>
+                  <h3 class="text-2xl font-semibold mb-6">${t('players')} (${room?.players?.length || 0}/4)</h3>
                   <div class="space-y-4 mb-6">
-                    <div class="p-4 bg-gray-800/50 rounded-lg">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-3">
-                          <div class="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full flex items-center justify-center text-sm font-bold">${state.user?.username?.charAt(0) || 'U'}</div>
-                          <div><p class="font-semibold">${t('you')}</p><span class="text-xs text-purple-400">${t('host')}</span></div>
-                        </div>
-                        <div class="w-3 h-3 rounded-full bg-red-400"></div>
-                      </div>
-                    </div>
+                    ${playersHTML}
                   </div>
                   <button id="toggleReady" class="w-full py-3 rounded-lg font-semibold transition-all bg-gray-600 hover:bg-gray-700">${t('notReady')}</button>
                 </div>
@@ -522,7 +644,7 @@
                   <div class="flex justify-between items-start mb-6">
                     <div>
                       <h2 class="text-3xl font-bold mb-2">${room?.name || t('campaignName')}</h2>
-                      <p class="text-gray-400">Код комнаты: <span class="font-mono bg-gray-800 px-2 py-1 rounded">${room?.id || '____'}</span></p>
+                      <p class="text-gray-400">Код комнаты: <span class="font-mono bg-gray-800 px-2 py-1 rounded">${room?.room_code || '____'}</span></p>
                     </div>
                     <div class="text-right"><p class="text-sm text-gray-400">${t('host')}:</p><p class="font-semibold">${room?.host || '____'}</p></div>
                   </div>
@@ -796,6 +918,20 @@
 
       // Saved campaigns
       on('toNewGame','click',()=>go('new-game'));
+      document.querySelectorAll('[data-campaign-id-continue]').forEach(button => {
+          button.addEventListener('click', () => {
+              const campaignId = button.dataset.campaignIdContinue;
+              handleContinueGame(campaignId);
+          });
+      });
+      document.querySelectorAll('[data-campaign-id-delete]').forEach(button => {
+          button.addEventListener('click', () => {
+              if (confirm('Are you sure you want to delete this campaign? This cannot be undone.')) {
+                  const campaignId = button.dataset.campaignIdDelete;
+                  handleDeleteGame(campaignId);
+              }
+          });
+      });
 
       // Join room
       const rc=qs('#roomCode');
@@ -837,16 +973,33 @@
       });
 
       // Settings
+      function saveSettings() {
+        storage.saveSettings({
+          theme: state.theme,
+          language: state.language,
+          customTheme: state.customTheme,
+        });
+      }
+
       themePresets().forEach((p,i)=>{
         document.querySelectorAll(`[data-preset="${i}"]`).forEach(el=>{
-          el.addEventListener('click',()=>{ state.theme='custom'; state.customTheme={primary:p.primary,secondary:p.secondary,background:p.background}; render(); });
+          el.addEventListener('click',()=>{
+            state.theme = p.name.toLowerCase().includes('light') ? 'light' : 'dark';
+            state.customTheme={primary:p.primary,secondary:p.secondary,background:p.background};
+            saveSettings();
+            render();
+          });
         });
       });
-      on('cPrimary','input',e=>{ state.customTheme.primary=e.target.value; applyTheme(); });
-      on('cSecondary','input',e=>{ state.customTheme.secondary=e.target.value; applyTheme(); });
-      on('cBackground','input',e=>{ state.customTheme.background=e.target.value; applyTheme(); });
+      on('cPrimary','input',e=>{ state.customTheme.primary=e.target.value; applyTheme(); saveSettings(); });
+      on('cSecondary','input',e=>{ state.customTheme.secondary=e.target.value; applyTheme(); saveSettings(); });
+      on('cBackground','input',e=>{ state.customTheme.background=e.target.value; applyTheme(); saveSettings(); });
       document.querySelectorAll('input[name="language"]').forEach(r=>{
-        r.addEventListener('change',e=>{ state.language=e.target.value; render(); });
+        r.addEventListener('change',e=>{
+          state.language=e.target.value;
+          saveSettings();
+          render();
+        });
       });
 
       // Tutorial
@@ -1006,6 +1159,15 @@
 
     // ====== Старт ======
     async function init() {
+      // Load saved settings first
+      const savedSettings = storage.getSettings();
+      if (savedSettings) {
+        state.theme = savedSettings.theme || 'dark';
+        state.language = savedSettings.language || 'ru';
+        state.customTheme = savedSettings.customTheme || { primary: '#ff4500', secondary: '#8b0000', background: '#000000' };
+      }
+      // No need to call applyTheme() here because render() will do it.
+
       const userCode = storage.getUserCode();
       if (userCode) {
         try {

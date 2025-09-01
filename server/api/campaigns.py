@@ -124,3 +124,27 @@ async def save_campaign_checkpoint(
     storage.write_json(checkpoint_file, campaign_details.dict())
 
     return {"message": "Checkpoint saved successfully", "file": str(checkpoint_file)}
+
+
+@router.delete("/{campaign_id}", status_code=204)
+async def delete_campaign(
+    campaign_id: str,
+    user_code: str = Depends(get_current_user_code)
+):
+    """Deletes a campaign and all its associated files."""
+    if not storage.get_campaigns_dir(user_code):
+         raise HTTPException(status_code=400, detail="Invalid user.")
+
+    try:
+        storage.delete_campaign_files(user_code, campaign_id)
+    except PermissionError as e:
+        # Log this, as it's a security concern
+        print(f"SECURITY ALERT: Attempted deletion outside scope by user {user_code}: {e}")
+        raise HTTPException(status_code=403, detail="Permission denied.")
+    except Exception as e:
+        # A more generic error for other issues
+        print(f"Error deleting campaign {campaign_id} for user {user_code}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete campaign files.")
+
+    # On success, return a 204 No Content response, so nothing to return here.
+    return None

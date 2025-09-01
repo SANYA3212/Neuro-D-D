@@ -1,4 +1,5 @@
 import json
+import shutil
 import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -95,6 +96,35 @@ def add_user_to_index(user_profile: UserProfile):
         "username": user_profile.username
     }
     write_json(config.INDEX_FILE, index)
+
+
+# --- Campaign Management ---
+
+def get_campaign_dir(user_code: str, campaign_id: str) -> Optional[Path]:
+    """Gets the full path to a specific campaign directory."""
+    try:
+        uuid.UUID(campaign_id) # Validate format
+        campaigns_dir = get_campaigns_dir(user_code)
+        if not campaigns_dir:
+            return None
+        return campaigns_dir / f"camp_{campaign_id}"
+    except ValueError:
+        return None
+
+def delete_campaign_files(user_code: str, campaign_id: str):
+    """Deletes the entire directory for a given campaign."""
+    campaign_dir = get_campaign_dir(user_code, campaign_id)
+
+    if campaign_dir and campaign_dir.exists() and campaign_dir.is_dir():
+        # Safety check: Ensure we are not deleting something outside the user's data folder.
+        if config.USERS_DIR not in campaign_dir.resolve().parents:
+             raise PermissionError("Attempted to delete a directory outside the allowed scope.")
+        shutil.rmtree(campaign_dir)
+    else:
+        # If directory doesn't exist, it's not an error for a DELETE operation.
+        # We can just silently succeed.
+        return
+
 
 # --- Room Management ---
 
