@@ -67,9 +67,17 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class UserProfileResponse(BaseModel):
+    """User profile data returned to the client, without sensitive info."""
+    id: uuid.UUID
+    user_code: str
+    username: str
+    email: str
+    created_at: datetime
+
 class AuthResponse(BaseModel):
     user_code: str
-    profile: UserProfile
+    profile: UserProfileResponse
 
 # Rooms
 class CreateRoomRequest(BaseModel):

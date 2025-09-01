@@ -4,7 +4,7 @@ from typing import Optional
 
 from server.core import storage, security
 from server.core.models import (
-    RegisterRequest, LoginRequest, AuthResponse, UserProfile,
+    RegisterRequest, LoginRequest, AuthResponse, UserProfile, UserProfileResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -53,20 +53,13 @@ async def register_user(request: RegisterRequest):
 
     # Create user files
     profile_path = storage.get_user_profile_file(new_user.user_code)
-    # Exclude hashed_password from the dict sent to the client, but save it to file
-    profile_for_saving = new_user.dict()
-    storage.write_json(profile_path, profile_for_saving)
+    storage.write_json(profile_path, new_user.dict())
 
     # Add to global index
     storage.add_user_to_index(new_user)
 
-    # We should not return the hashed password to the client
-    profile_for_response = new_user.dict(exclude={'hashed_password'})
-
-    return AuthResponse(
-        user_code=new_user.user_code,
-        profile=UserProfile(**profile_for_response)
-    )
+    # FastAPI will automatically use the UserProfileResponse model defined in AuthResponse
+    return AuthResponse(user_code=new_user.user_code, profile=new_user)
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -75,22 +68,14 @@ async def login_user(request: LoginRequest):
     Logs a user in by verifying their credentials.
     """
     user_profile = storage.find_user_by_email(request.email)
-    if not user_profile:
+    if not user_profile or not security.verify_password(request.password, user_profile.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-    if not security.verify_password(request.password, user_profile.hashed_password):
-        raise HTTPException(status_code=401, detail="Incorrect email or password")
-
-    # We should not return the hashed password to the client
-    profile_for_response = user_profile.dict(exclude={'hashed_password'})
-
-    return AuthResponse(
-        user_code=user_profile.user_code,
-        profile=UserProfile(**profile_for_response)
-    )
+    # FastAPI will automatically use the UserProfileResponse model defined in AuthResponse
+    return AuthResponse(user_code=user_profile.user_code, profile=user_profile)
 
 
-@router.get("/me", response_model=UserProfile)
+@router.get("/me", response_model=UserProfileResponse)
 async def get_user_me(current_user: UserProfile = Depends(get_current_user)):
     """
     Returns the profile of the currently authenticated user.
