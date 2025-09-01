@@ -10,7 +10,7 @@ from server.core.config import ROOT_DIR
 app = FastAPI(
     title="Neuro D&D API",
     description="The backend server for the Neuro D&D project.",
-    version="0.1.0",
+    version="1.0.a",
 )
 
 # --- CORS Middleware ---
