@@ -154,10 +154,10 @@
 
       if (state.theme === 'light'){
         document.documentElement.classList.remove('dark');
-        document.body.style.color = '#1f2937'; // A dark gray for text
+        document.body.style.setProperty('color', '#1f2937', 'important');
       } else {
         document.documentElement.classList.add('dark');
-        document.body.style.color = '#f9fafb'; // A light gray for text
+        document.body.style.setProperty('color', '#f9fafb', 'important');
       }
     }
 
@@ -294,7 +294,6 @@
     }
     function themePresets(){ return [
       { name:t('darkTheme'), background:'#000000', primary:'#ff4500', secondary:'#8b0000' },
-      { name:t('lightTheme'), background:'#f5f5f5', primary:'#d32f2f', secondary:'#b71c1c' },
       { name:'Cyberpunk', background:'#0a0a12', primary:'#ff00ff', secondary:'#00ffff' },
       { name:'Forest', background:'#0d1b0d', primary:'#4caf50', secondary:'#8bc34a' },
     ];}
