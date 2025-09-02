@@ -152,15 +152,12 @@
       document.documentElement.style.setProperty('--secondary', state.customTheme.secondary);
       document.documentElement.style.setProperty('--background', state.customTheme.background);
 
-      // Manage dark/light mode classes for Tailwind and custom text color
       if (state.theme === 'light'){
         document.documentElement.classList.remove('dark');
-        document.body.classList.remove('text-white');
-        document.body.classList.add('text-black');
-      } else { // 'dark' or other themes are assumed to be dark backgrounds
+        document.body.style.color = '#1f2937'; // A dark gray for text
+      } else {
         document.documentElement.classList.add('dark');
-        document.body.classList.remove('text-black');
-        document.body.classList.add('text-white');
+        document.body.style.color = '#f9fafb'; // A light gray for text
       }
     }
 
