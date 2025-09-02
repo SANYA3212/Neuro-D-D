@@ -206,9 +206,21 @@
 
         state.ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
-            if (message.room_code) { // This is a room_update
+
+            if (message.type === "new_message") {
+                state.chatMessages.push({
+                    id: message.id,
+                    text: message.text,
+                    sender: message.sender,
+                    timestamp: new Date(message.timestamp).toLocaleTimeString()
+                });
+                if (state.currentPage === 'lobby') render();
+
+            } else if (message.room_code) { // This is a full room_update
                 state.currentRoom = message;
-                if (state.currentPage === 'lobby') {
+                state.sceneHistory = message.journal?.entries || [];
+                state.chatMessages = processJournal(message.journal, message.players);
+                if (state.currentPage === 'lobby' || state.currentPage === 'game') {
                     render();
                 }
             } else {
@@ -1196,6 +1208,21 @@
     function qs(sel,root=document){ return root.querySelector(sel); }
     function on(id,evt,handler){ const el=document.getElementById(id); if(el) el.addEventListener(evt,handler); }
     function onIn(root,sel,evt,handler){ const el=qs(sel,root); if(el) el.addEventListener(evt,handler); }
+
+    function processJournal(journal, players) {
+        if (!journal || !journal.lobby_chat) return [];
+        return journal.lobby_chat.map(msg => {
+            // The message 'role' is used to store the user_code of the sender
+            const player = players.find(p => p.user_code === msg.role);
+            const senderName = player ? player.username : 'Unknown';
+            return {
+                id: msg.timestamp, // Not unique, but best we have for now
+                text: msg.content,
+                sender: senderName,
+                timestamp: new Date(msg.timestamp).toLocaleTimeString()
+            };
+        });
+    }
 
     function renderInventory() {
         const me = state.currentRoom?.players?.find(p => p.user_code === state.user?.user_code);
