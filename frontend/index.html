@@ -33,6 +33,7 @@
       language: 'ru',
       customTheme: { primary:'#ff4500', secondary:'#8b0000', background:'#000000' },
       chatMessages: [],
+      ws: null,
     };
 
     // ====== Хранилище и API ======
@@ -52,6 +53,9 @@
       saveSettings: (settings) => {
         localStorage.setItem('settings', JSON.stringify(settings));
       },
+      saveCurrentRoomCode: (roomCode) => localStorage.setItem('current_room_code', roomCode),
+      getCurrentRoomCode: () => localStorage.getItem('current_room_code'),
+      clearCurrentRoomCode: () => localStorage.removeItem('current_room_code'),
     };
 
     const api = {
@@ -86,11 +90,13 @@
       getCampaigns: () => api.fetchJSON('/campaigns'),
       updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
       updateAvatar: (avatar_url) => api.fetchJSON('/users/profile', { method: 'PUT', body: { avatar_url } }),
-      getAiCompletion: (campaignId, messages) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages } }),
+      getAiCompletion: (campaignId, messages, lastDiceRoll) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages, last_dice_roll: lastDiceRoll } }),
       createRoom: (isPublic, name) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name } }),
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
       createCampaign: (name, tone, difficulty) => api.fetchJSON('/campaigns', { method: 'POST', body: { name, tone, difficulty } }),
+      getCampaignDetails: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`),
+      deleteCampaign: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`, { method: 'DELETE' }),
     };
 
     // ====== Локализация ======
@@ -119,6 +125,7 @@
         classicDnD:"Классический D&D", epic:"Эпический", dark:"Тёмный", humorous:"Юмористический", rulesFirst:"Минималистичный (rules-first)",
         attack:"Атаковать", explore:"Исследовать", negotiate:"Переговоры", useItem:"Использовать предмет", rollCube:"Бросить куб",
         enterAction:"Введите действие...", campaignStart:"Начало кампании", diceRoll:"Бросок куба",
+        delete: "Удалить",
        },
       en: { newGame:"New Game", joinRoom:"Join Room", continue:"Continue", setPlot:"Set Plot", settings:"Settings",
         howToPlay:"How to Play", profile:"Profile", logout:"Logout", createRoom:"Create Room", joinByCode:"Join by Code",
@@ -142,6 +149,7 @@
         classicDnD:"Classic D&D", epic:"Epic", dark:"Dark", humorous:"Humorous", rulesFirst:"Minimalistic (rules-first)",
         attack:"Attack", explore:"Explore", negotiate:"Negotiate", useItem:"Use Item", rollCube:"Roll Cube",
         enterAction:"Enter action...", campaignStart:"Campaign Start", diceRoll:"Dice Roll",
+        delete: "Delete",
        }
     };
     const t = k => (translations[state.language] && translations[state.language][k]) || k;
@@ -162,9 +170,74 @@
     }
 
     // ====== Навигация ======
-    function go(page){ state.currentPage = page; render(); }
+    function go(page){
+      // If we are leaving the lobby or game, disconnect the websocket
+      if ((state.currentPage === 'lobby' || state.currentPage === 'game') && (page !== 'lobby' && page !== 'game')) {
+        disconnectWebSocket();
+        storage.clearCurrentRoomCode();
+      }
+
+      state.currentPage = page;
+      render();
+
+      // If we have entered the lobby, connect the websocket
+      if (page === 'lobby') {
+        connectWebSocket();
+      }
+    }
 
     // ====== Бизнес-логика (интегрированная с API) ======
+    function connectWebSocket() {
+        if (state.ws) {
+            state.ws.close();
+        }
+        const roomCode = state.currentRoom?.room_code;
+        const userCode = state.user?.user_code;
+        if (!roomCode || !userCode) return;
+
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/api/rooms/ws/${roomCode}/${userCode}`;
+
+        state.ws = new WebSocket(wsUrl);
+
+        state.ws.onopen = () => {
+            console.log("WebSocket connected to room " + roomCode);
+        };
+
+        state.ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.room_code) { // This is a room_update
+                state.currentRoom = message;
+                if (state.currentPage === 'lobby') {
+                    render();
+                }
+            } else {
+                console.log("Received unhandled WS message:", message);
+            }
+        };
+
+        state.ws.onerror = (error) => {
+            console.error("WebSocket error:", error);
+        };
+
+        state.ws.onclose = () => {
+            console.log("WebSocket disconnected");
+            state.ws = null;
+            if(state.currentPage === 'lobby') {
+                alert("Connection to the room was lost.");
+                go('landing');
+            }
+        };
+    }
+
+    function disconnectWebSocket() {
+        if (state.ws) {
+            state.ws.onclose = null;
+            state.ws.close();
+            state.ws = null;
+        }
+    }
+
     async function handleStartCampaign(form) {
         const name = form.querySelector('textarea').value.trim();
         const tone = form.querySelector('#toneSelect').value;
@@ -182,6 +255,7 @@
             // Now create a room associated with this campaign
             const newRoom = await api.createRoom(true, newCampaign.name);
             state.currentRoom = newRoom;
+            storage.saveCurrentRoomCode(newRoom.room_code);
 
             go('lobby');
         } catch (error) {
@@ -200,9 +274,40 @@
         await api.joinRoom(roomId);
         const roomDetails = await api.getRoomDetails(roomId);
         state.currentRoom = roomDetails;
+        storage.saveCurrentRoomCode(roomDetails.room_code);
         go('lobby');
       } catch (error) {
          alert(`${t('error')}: ${error.message}`);
+      }
+    }
+
+    async function handleContinueGame(campaignId) {
+      try {
+        const campaignDetails = await api.getCampaignDetails(campaignId);
+        state.currentCampaign = campaignDetails.meta;
+        state.sceneHistory = campaignDetails.journal.entries;
+        state.chatMessages = processJournal(campaignDetails.journal, []); // Players will be loaded in the new room
+
+        // Create a new room for this continued session
+        const newRoom = await api.createRoom(true, campaignDetails.meta.name, campaignDetails.meta.id);
+        state.currentRoom = newRoom;
+        storage.saveCurrentRoomCode(newRoom.room_code);
+
+        go('lobby');
+      } catch (error) {
+        alert(`${t('error')}: ${error.message}`);
+      }
+    }
+
+    async function handleDeleteGame(campaignId) {
+      try {
+        await api.deleteCampaign(campaignId);
+        state.campaigns = await api.getCampaigns();
+        if (state.currentPage === 'saved-campaigns') {
+            render();
+        }
+      } catch (error) {
+        alert(`${t('error')}: ${error.message}`);
       }
     }
     async function handleLogin(form){
@@ -236,6 +341,7 @@
     }
     function handleLogout(){
       storage.removeUserCode();
+      storage.clearCurrentRoomCode();
       state.user = null;
       go('landing');
     }
@@ -271,7 +377,11 @@
         const campaignId = state.currentCampaign.id;
         const messagesForApi = state.sceneHistory.map(h => ({ role: h.role, content: h.content }));
 
-        const aiResponse = await api.getAiCompletion(campaignId, messagesForApi);
+        // Get the last dice roll result, if any, and then clear it
+        const lastDiceRoll = state.diceRoll ? state.diceRoll.result : null;
+        state.diceRoll = null;
+
+        const aiResponse = await api.getAiCompletion(campaignId, messagesForApi, lastDiceRoll);
 
         const assistantMessage = { role: 'assistant', content: aiResponse.text };
         state.sceneHistory.push(assistantMessage);
@@ -493,10 +603,17 @@
             ${hasCampaigns ? `
               <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 ${state.campaigns.map(c => `
-                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800 hover:border-[var(--primary)] transition-all cursor-pointer">
-                    <h3 class="text-xl font-bold text-[var(--primary)] truncate">${c.name}</h3>
-                    <p class="text-sm text-gray-400 mt-2">Tone: ${t(c.tone)}</p>
-                    <p class="text-sm text-gray-400">Difficulty: ${t(c.difficulty)}</p>
+                  <div class="bg-black/50 p-6 rounded-xl border border-gray-800 flex flex-col justify-between">
+                    <div>
+                      <h3 class="text-xl font-bold text-[var(--primary)] truncate mb-2">${c.name}</h3>
+                      <p class="text-sm text-gray-400">Tone: ${t(c.tone)}</p>
+                      <p class="text-sm text-gray-400">Difficulty: ${t(c.difficulty)}</p>
+                      <p class="text-sm text-gray-400">Created: ${new Date(c.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div class="mt-4 flex gap-2">
+                      <button data-campaign-id-continue="${c.id}" class="flex-1 bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold text-sm transition-colors">${t('continue')}</button>
+                      <button data-campaign-id-delete="${c.id}" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-semibold text-sm transition-colors">${t('delete')}</button>
+                    </div>
                   </div>
                 `).join('')}
               </div>
@@ -512,24 +629,39 @@
         </div>`;
       },
 
-      lobby(){ const room=state.currentRoom; return `
+      lobby(){ const room=state.currentRoom;
+        const playersHTML = (room?.players && state.user) ? room.players.map(player => {
+            const isMe = player.user_code === state.user.user_code;
+            const avatarDisplay = player.avatar_url
+                ? `<img src="${player.avatar_url}" alt="Avatar" class="w-10 h-10 rounded-full object-cover">`
+                : `<div class="w-10 h-10 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-sm font-bold">${player.username.charAt(0).toUpperCase()}</div>`;
+
+            return `
+              <div class="p-4 bg-gray-800/50 rounded-lg">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-3">
+                    ${avatarDisplay}
+                    <div>
+                      <p class="font-semibold">${isMe ? player.username + ` (${t('you')})` : player.username}</p>
+                      ${player.is_host ? `<span class="text-xs text-purple-400">${t('host')}</span>` : ''}
+                    </div>
+                  </div>
+                  <div class="w-3 h-3 rounded-full bg-green-500" title="Online"></div>
+                </div>
+              </div>
+            `;
+          }).join('') : '<p>Loading players...</p>';
+
+        return `
         <div class="min-h-screen bg-[var(--background)] text-white">
           <div class="container mx-auto px-6 py-8">
             <button id="back" class="mb-6 flex items-center text-[var(--primary)] hover:text-[var(--primary)]/80">← ${t('back')}</button>
             <div class="grid lg:grid-cols-3 gap-8">
               <div class="lg:col-span-1">
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-                  <h3 class="text-2xl font-semibold mb-6">${t('players')} (${state.currentRoom?.players?.length || 0}/4)</h3>
+                  <h3 class="text-2xl font-semibold mb-6">${t('players')} (${room?.players?.length || 0}/4)</h3>
                   <div class="space-y-4 mb-6">
-                    <div class="p-4 bg-gray-800/50 rounded-lg">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-3">
-                          <div class="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full flex items-center justify-center text-sm font-bold">${state.user?.username?.charAt(0) || 'U'}</div>
-                          <div><p class="font-semibold">${t('you')}</p><span class="text-xs text-purple-400">${t('host')}</span></div>
-                        </div>
-                        <div class="w-3 h-3 rounded-full bg-red-400"></div>
-                      </div>
-                    </div>
+                    ${playersHTML}
                   </div>
                   <button id="toggleReady" class="w-full py-3 rounded-lg font-semibold transition-all bg-gray-600 hover:bg-gray-700">${t('notReady')}</button>
                 </div>
@@ -594,6 +726,7 @@
             <div class="grid lg:grid-cols-4 gap-6">
               <div class="lg:col-span-1 space-y-6">
                 ${renderPlayers()}
+                ${renderInventory()}
                 ${renderInitiative()}
               </div>
 
@@ -813,6 +946,20 @@
 
       // Saved campaigns
       on('toNewGame','click',()=>go('new-game'));
+      document.querySelectorAll('[data-campaign-id-continue]').forEach(button => {
+          button.addEventListener('click', () => {
+              const campaignId = button.dataset.campaignIdContinue;
+              handleContinueGame(campaignId);
+          });
+      });
+      document.querySelectorAll('[data-campaign-id-delete]').forEach(button => {
+          button.addEventListener('click', () => {
+              if (confirm('Are you sure you want to delete this campaign? This cannot be undone.')) {
+                  const campaignId = button.dataset.campaignIdDelete;
+                  handleDeleteGame(campaignId);
+              }
+          });
+      });
 
       // Join room
       const rc=qs('#roomCode');
@@ -998,22 +1145,34 @@
     // ====== Вспомогательные рендер-функции ======
     function renderPlayers() {
       if (!state.currentRoom?.players || state.currentRoom.players.length === 0) return '';
+      const players = state.currentRoom.players;
+
       return `
         <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
           <h3 class="text-xl font-semibold mb-4">${t('players')}</h3>
           <div class="space-y-3">
-            ${state.currentRoom.players.map(p => `
+            ${players.map(p => {
+              const isMe = p.user_code === state.user?.user_code;
+              const hpPercentage = (p.hp / p.max_hp) * 100;
+              const avatarDisplay = p.avatar_url
+                ? `<img src="${p.avatar_url}" alt="Avatar" class="w-12 h-12 rounded-full object-cover">`
+                : `<div class="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-lg font-bold">${p.username.charAt(0).toUpperCase()}</div>`;
+
+              return `
               <div class="p-3 bg-gray-800/50 rounded-lg">
-                <div class="flex justify-between items-start mb-2">
-                  <span class="font-semibold">${p.is_me ? t('you') : p.name}</span>
-                  <span class="text-xs bg-purple-600 px-2 py-1 rounded">${p.class || 'Adventurer'}</span>
+                <div class="flex items-center space-x-3 mb-2">
+                    ${avatarDisplay}
+                    <div>
+                        <p class="font-semibold">${isMe ? t('you') : p.username}</p>
+                        <p class="text-xs text-gray-400">${p.is_host ? t('host') : 'Player'}</p>
+                    </div>
                 </div>
-                <div class="w-full bg-gray-700 rounded-full h-2">
-                  <div class="bg-gradient-to-r from-green-400 to-red-400 h-2 rounded-full" style="width:${(p.hp / p.max_hp) * 100}%"></div>
+                <div class="w-full bg-gray-700 rounded-full h-2.5">
+                  <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-2.5 rounded-full" style="width: ${hpPercentage}%"></div>
                 </div>
-                <div class="text-xs text-gray-400 mt-1">${p.hp} / ${p.max_hp} HP</div>
+                <div class="text-xs text-gray-400 mt-1 text-right">${p.hp} / ${p.max_hp} HP</div>
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
         </div>`;
     }
@@ -1038,6 +1197,34 @@
     function on(id,evt,handler){ const el=document.getElementById(id); if(el) el.addEventListener(evt,handler); }
     function onIn(root,sel,evt,handler){ const el=qs(sel,root); if(el) el.addEventListener(evt,handler); }
 
+    function renderInventory() {
+        const me = state.currentRoom?.players?.find(p => p.user_code === state.user?.user_code);
+        if (!me || !me.inventory) return '';
+
+        return `
+        <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
+            <h3 class="text-xl font-semibold mb-4">Inventory</h3>
+            <div class="space-y-2">
+            ${me.inventory.length === 0
+                ? '<p class="text-sm text-gray-500">Your inventory is empty.</p>'
+                : me.inventory.map(item => `
+                    <div class="p-2 bg-gray-800/50 rounded-lg text-sm">
+                        <div class="flex justify-between items-center">
+                            <span class="font-semibold">${item.name}</span>
+                            ${item.max_uses ? `<span class="text-xs text-gray-400">${item.uses}/${item.max_uses}</span>` : ''}
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1 mb-2">${item.description || ''}</div>
+                        <div class="flex gap-2">
+                            <button class="flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Use</button>
+                            <button class="flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Give</button>
+                        </div>
+                    </div>
+                `).join('')
+            }
+            </div>
+        </div>`;
+    }
+
     // ====== Старт ======
     async function init() {
       // Load saved settings first
@@ -1049,21 +1236,44 @@
       }
 
       const userCode = storage.getUserCode();
-      if (userCode) {
-        try {
-          state.user = await api.getMe();
-          state.campaigns = await api.getCampaigns();
-          go('landing');
-        } catch (error) {
-          // Token is invalid or expired
-          storage.removeUserCode();
-          state.user = null;
-          go('login');
-        }
-      } else {
+      if (!userCode) {
         go('login');
+        render(); // Render login page and stop.
+        return;
       }
-      render(); // Initial render after async check
+
+      // User is logged in, try to get their profile
+      try {
+        state.user = await api.getMe();
+        state.campaigns = await api.getCampaigns();
+
+        // Check if we were in a room and try to rejoin
+        const savedRoomCode = storage.getCurrentRoomCode();
+        if (savedRoomCode) {
+          try {
+            // We still hit the HTTP endpoint first to ensure we are in the player list
+            const roomDetails = await api.getRoomDetails(savedRoomCode);
+            state.currentRoom = roomDetails;
+            // The go('lobby') call will handle connecting the WebSocket
+            go('lobby');
+            return; // Stop execution, we are in the lobby now
+          } catch (e) {
+            console.warn("Could not rejoin room, it may have been closed.", e);
+            storage.clearCurrentRoomCode(); // Clean up invalid code
+          }
+        }
+
+        // If not rejoining a room, go to the main landing page
+        go('landing'); // This calls render()
+      } catch (error) {
+        // This likely means the user token is invalid or expired
+        console.error("Session token invalid, logging out.", error);
+        storage.removeUserCode();
+        storage.clearCurrentRoomCode();
+        state.user = null;
+        go('login');
+        render(); // Render login page
+      }
     }
 
     init();
