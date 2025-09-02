@@ -24,6 +24,20 @@ class Message(BaseModel):
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
+class GameItem(BaseModel):
+    """Represents an item in a player's inventory."""
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    name: str
+    description: Optional[str] = None
+    uses: Optional[int] = None
+    max_uses: Optional[int] = None
+
+class PlayerState(BaseModel):
+    """Represents the state of a player within a campaign (e.g., HP, status effects)."""
+    hp: int = 20
+    max_hp: int = 20
+    inventory: List[GameItem] = Field(default_factory=list)
+
 class CampaignMeta(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: str
@@ -31,11 +45,13 @@ class CampaignMeta(BaseModel):
     difficulty: str = "medium"
     host_user_code: str
     players: List[str] = []
+    player_states: Dict[str, PlayerState] = Field(default_factory=dict)
     status: str = "active" # e.g., 'active', 'archived', 'completed'
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class CampaignJournal(BaseModel):
-    entries: List[Message] = []
+    entries: List[Message] = Field(default_factory=list)
+    lobby_chat: List[Message] = Field(default_factory=list)
 
 class CampaignCheckpoint(BaseModel):
     timestamp: datetime
@@ -53,10 +69,21 @@ class Room(BaseModel):
     name: Optional[str] = None
     is_public: bool = False
     players: List[str] = [] # List of user_codes
+    campaign_id: Optional[str] = None # Link to the campaign, if any
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # --- API Request/Response Models ---
+
+class PlayerInfo(BaseModel):
+    """Public information about a player in a room."""
+    user_code: str
+    username: str
+    avatar_url: Optional[str] = None
+    is_host: bool = False
+    hp: int
+    max_hp: int
+    inventory: List[GameItem] = Field(default_factory=list)
 
 # Auth
 class RegisterRequest(BaseModel):
@@ -85,9 +112,20 @@ class AuthResponse(BaseModel):
 class CreateRoomRequest(BaseModel):
     is_public: bool
     name: Optional[str] = None
+    campaign_id: Optional[str] = None
 
 class JoinRoomRequest(BaseModel):
     room_code: str
+
+class RoomDetailsResponse(BaseModel):
+    """A model for returning the full details of a room, including player profiles."""
+    room_code: str
+    host_user_code: str
+    name: Optional[str] = None
+    is_public: bool = False
+    players: List[PlayerInfo] = []
+    created_at: datetime
+    journal: Optional[CampaignJournal] = None # Include the journal for state restoration
 
 class RoomResponse(BaseModel):
     room_code: str
@@ -116,6 +154,7 @@ class AICompleteRequest(BaseModel):
     campaign_id: str
     messages: List[Message]
     context: Optional[Dict[str, Any]] = None
+    last_dice_roll: Optional[int] = None
 
 class AICompleteResponse(BaseModel):
     text: str

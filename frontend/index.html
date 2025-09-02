@@ -33,7 +33,7 @@
       language: 'ru',
       customTheme: { primary:'#ff4500', secondary:'#8b0000', background:'#000000' },
       chatMessages: [],
-      lobbyPollInterval: null,
+      ws: null,
     };
 
     // ====== Хранилище и API ======
@@ -53,6 +53,9 @@
       saveSettings: (settings) => {
         localStorage.setItem('settings', JSON.stringify(settings));
       },
+      saveCurrentRoomCode: (roomCode) => localStorage.setItem('current_room_code', roomCode),
+      getCurrentRoomCode: () => localStorage.getItem('current_room_code'),
+      clearCurrentRoomCode: () => localStorage.removeItem('current_room_code'),
     };
 
     const api = {
@@ -86,9 +89,19 @@
       getMe: () => api.fetchJSON('/auth/me'),
       getCampaigns: () => api.fetchJSON('/campaigns'),
       updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
-      updateAvatar: (avatar_url) => api.fetchJSON('/users/profile', { method: 'PUT', body: { avatar_url } }),
-      getAiCompletion: (campaignId, messages) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages } }),
-      createRoom: (isPublic, name) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name } }),
+      uploadAvatar: (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        // We don't use fetchJSON here because it sets Content-Type to application/json
+        const url = api.BASE_URL + '/users/avatar';
+        const headers = { 'X-User-Code': storage.getUserCode() };
+        return fetch(url, { method: 'POST', body: formData, headers }).then(res => {
+            if (!res.ok) throw new Error('Avatar upload failed');
+            return res.json();
+        });
+      },
+      getAiCompletion: (campaignId, messages, lastDiceRoll) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages, last_dice_roll: lastDiceRoll } }),
+      createRoom: (isPublic, name, campaignId = null) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name, campaign_id: campaignId } }),
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
       createCampaign: (name, tone, difficulty) => api.fetchJSON('/campaigns', { method: 'POST', body: { name, tone, difficulty } }),
@@ -171,52 +184,95 @@
 
     // ====== Навигация ======
     function go(page){
-      // Stop polling if we are leaving the lobby
-      if (state.currentPage === 'lobby' && page !== 'lobby' && state.lobbyPollInterval) {
-        clearInterval(state.lobbyPollInterval);
-        state.lobbyPollInterval = null;
+      // If we are leaving the lobby or game, disconnect the websocket
+      if ((state.currentPage === 'lobby' || state.currentPage === 'game') && (page !== 'lobby' && page !== 'game')) {
+        disconnectWebSocket();
+        storage.clearCurrentRoomCode();
       }
 
       state.currentPage = page;
       render();
 
-      // Start polling if we have entered the lobby page
-      if (page === 'lobby' && !state.lobbyPollInterval) {
-        startLobbyPolling();
+      // If we have entered the lobby, connect the websocket
+      if (page === 'lobby') {
+        connectWebSocket();
       }
     }
 
     // ====== Бизнес-логика (интегрированная с API) ======
-    function startLobbyPolling() {
-      // Clear any existing interval to be safe
-      if (state.lobbyPollInterval) clearInterval(state.lobbyPollInterval);
-
-      state.lobbyPollInterval = setInterval(async () => {
-        if (!state.currentRoom?.room_code) {
-          clearInterval(state.lobbyPollInterval);
-          state.lobbyPollInterval = null;
-          return;
+    function connectWebSocket() {
+        if (state.ws) {
+            state.ws.close();
         }
-        try {
-          const roomDetails = await api.getRoomDetails(state.currentRoom.room_code);
-          const hasChanged = JSON.stringify(state.currentRoom.players) !== JSON.stringify(roomDetails.players);
+        const roomCode = state.currentRoom?.room_code;
+        const userCode = state.user?.user_code;
+        if (!roomCode || !userCode) return;
 
-          if (hasChanged) {
-            state.currentRoom = roomDetails;
-            if (state.currentPage === 'lobby') {
-              render();
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/api/rooms/ws/${roomCode}/${userCode}`;
+
+        state.ws = new WebSocket(wsUrl);
+
+        state.ws.onopen = () => {
+            console.log("WebSocket connected to room " + roomCode);
+        };
+
+        state.ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+
+            if (message.type === "new_message") {
+                // This is a single new message, just add it.
+                // The sender name is already resolved by the backend.
+                state.chatMessages.push({
+                    id: message.id,
+                    text: message.text,
+                    sender: message.sender,
+                    timestamp: new Date(message.timestamp).toLocaleTimeString()
+                });
+                if (state.currentPage === 'lobby') render();
+
+            } else if (message.room_code) { // This is a full room_update
+                state.currentRoom = message;
+                // When we get a full update, we also get the full chat history.
+                state.chatMessages = processJournal(message.journal, message.players);
+                if (state.currentPage === 'lobby') render();
+
+            } else {
+                console.log("Received unhandled WS message:", message);
             }
-          }
-        } catch (error) {
-          console.error("Lobby polling failed:", error);
-          clearInterval(state.lobbyPollInterval);
-          state.lobbyPollInterval = null;
-          if (state.currentPage === 'lobby') {
-              alert(t('error') + ": " + error.message);
-              go('landing');
-          }
+        };
+
+        state.ws.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            // Optionally show an error to the user
+        };
+
+        state.ws.onclose = () => {
+            console.log("WebSocket disconnected");
+            state.ws = null;
+            // If we are unexpectedly disconnected while in the lobby, show a message.
+            if(state.currentPage === 'lobby') {
+                alert("Connection to the room was lost.");
+                go('landing');
+            }
+        };
+    }
+
+    function disconnectWebSocket() {
+        if (state.ws) {
+            state.ws.onclose = null; // Prevent the onclose handler from firing on manual disconnect
+            state.ws.close();
+            state.ws = null;
         }
-      }, 3000); // Poll every 3 seconds
+    }
+
+    function sendChatMessage(text) {
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({
+                type: "chat",
+                text: text,
+            }));
+        }
     }
 
     async function handleStartCampaign(form) {
@@ -234,8 +290,9 @@
             state.currentCampaign = newCampaign;
 
             // Now create a room associated with this campaign
-            const newRoom = await api.createRoom(true, newCampaign.name);
+            const newRoom = await api.createRoom(true, newCampaign.name, newCampaign.id);
             state.currentRoom = newRoom;
+            storage.saveCurrentRoomCode(newRoom.room_code);
 
             go('lobby');
         } catch (error) {
@@ -254,6 +311,7 @@
         await api.joinRoom(roomId);
         const roomDetails = await api.getRoomDetails(roomId);
         state.currentRoom = roomDetails;
+        storage.saveCurrentRoomCode(roomDetails.room_code);
         go('lobby');
       } catch (error) {
          alert(`${t('error')}: ${error.message}`);
@@ -267,7 +325,7 @@
         state.sceneHistory = campaignDetails.journal.entries;
 
         // Create a new room for this continued session
-        const newRoom = await api.createRoom(true, campaignDetails.meta.name);
+        const newRoom = await api.createRoom(true, campaignDetails.meta.name, campaignDetails.meta.id);
         state.currentRoom = newRoom;
 
         go('lobby');
@@ -319,6 +377,7 @@
     }
     function handleLogout(){
       storage.removeUserCode();
+      storage.clearCurrentRoomCode();
       state.user = null;
       go('landing');
     }
@@ -354,7 +413,11 @@
         const campaignId = state.currentCampaign.id;
         const messagesForApi = state.sceneHistory.map(h => ({ role: h.role, content: h.content }));
 
-        const aiResponse = await api.getAiCompletion(campaignId, messagesForApi);
+        // Get the last dice roll result, if any, and then clear it
+        const lastDiceRoll = state.diceRoll ? state.diceRoll.result : null;
+        state.diceRoll = null;
+
+        const aiResponse = await api.getAiCompletion(campaignId, messagesForApi, lastDiceRoll);
 
         const assistantMessage = { role: 'assistant', content: aiResponse.text };
         state.sceneHistory.push(assistantMessage);
@@ -604,22 +667,26 @@
       },
 
       lobby(){ const room=state.currentRoom;
-        const playersHTML = (room?.players && state.user) ? room.players.map(playerCode => {
-            const isMe = playerCode === state.user.user_code;
-            // TODO: This is a temporary fix. The backend should return player usernames.
-            const username = isMe ? state.user.username : `User ${playerCode.substring(0, 4)}`;
-            const isHost = playerCode === room.host_user_code;
+        const playersHTML = (room?.players && state.user) ? room.players.map(player => {
+            const isMe = player.user_code === state.user.user_code;
+            const avatarDisplay = player.avatar_url
+                ? `<img src="${player.avatar_url}" alt="Avatar" class="w-10 h-10 rounded-full object-cover">`
+                : `<div class="w-10 h-10 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-sm font-bold">${player.username.charAt(0).toUpperCase()}</div>`;
+
             return `
               <div class="p-4 bg-gray-800/50 rounded-lg">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-sm font-bold">${username.charAt(0).toUpperCase()}</div>
+                    ${avatarDisplay}
                     <div>
-                      <p class="font-semibold">${isMe ? `${t('you')} (${username})` : username}</p>
-                      ${isHost ? `<span class="text-xs text-purple-400">${t('host')}</span>` : ''}
+                      <p class="font-semibold">${isMe ? player.username + ` (${t('you')})` : player.username}</p>
+                      ${player.is_host ? `<span class="text-xs text-purple-400">${t('host')}</span>` : ''}
                     </div>
                   </div>
-                  <div class="w-3 h-3 rounded-full bg-green-500" title="Ready"></div>
+                  <div class="text-right">
+                    <div class="text-xs font-mono text-green-400">${player.hp}/${player.max_hp} HP</div>
+                    <div class="w-3 h-3 rounded-full bg-green-500 mt-1" title="Ready"></div>
+                  </div>
                 </div>
               </div>
             `;
@@ -646,7 +713,7 @@
                       <h2 class="text-3xl font-bold mb-2">${room?.name || t('campaignName')}</h2>
                       <p class="text-gray-400">Код комнаты: <span class="font-mono bg-gray-800 px-2 py-1 rounded">${room?.room_code || '____'}</span></p>
                     </div>
-                    <div class="text-right"><p class="text-sm text-gray-400">${t('host')}:</p><p class="font-semibold">${room?.host || '____'}</p></div>
+                    <div class="text-right"><p class="text-sm text-gray-400">${t('host')}:</p><p class="font-semibold">${room?.players?.find(p => p.is_host)?.username || '____'}</p></div>
                   </div>
                   <div class="grid md:grid-cols-2 gap-6">
                     <div>
@@ -666,7 +733,16 @@
                     </div>
                     <div>
                       <h3 class="text-lg font-semibold mb-3">${t('chat')}</h3>
-                      <div class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto"><div class="space-y-2 text-sm"><div class="text-[var(--primary)]">${t('system')}: ${t('youJoined')}</div></div></div>
+                      <div id="lobbyChatBox" class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto">
+                        <div class="space-y-3 text-sm">
+                          ${state.chatMessages.map(msg=>`
+                            <div class="text-gray-300">
+                              <span class="font-semibold text-[var(--primary)]">${msg.sender}:</span>
+                              <span>${msg.text}</span>
+                              <div class="text-xs text-gray-500 text-right">${msg.timestamp}</div>
+                            </div>`).join('')}
+                        </div>
+                      </div>
                       <div class="flex gap-2"><input id="lobbyMsg" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="${t('message')}"><button id="lobbySend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button></div>
                     </div>
                   </div>
@@ -699,6 +775,7 @@
             <div class="grid lg:grid-cols-4 gap-6">
               <div class="lg:col-span-1 space-y-6">
                 ${renderPlayers()}
+                ${renderInventory()}
                 ${renderInitiative()}
               </div>
 
@@ -706,11 +783,34 @@
                 <div class="bg-black/50 rounded-xl overflow-hidden border border-gray-800">
                   <div class="p-6 min-h-[500px]" id="sceneBox">
                     ${state.sceneHistory.length===0?`<div class="text-center py-12 text-gray-500">${t('sceneDescription')}</div>`:
-                      state.sceneHistory.map(scene=>`
-                        <div class="mb-6 ${scene.aiResponse?'text-[var(--primary)]':'text-white'}">
-                          <p class="text-lg leading-relaxed mb-4">${scene.content}</p>
-                          ${scene.image?`<img src="${scene.image}" alt="Сцена" class="w-full h-80 object-cover rounded-lg mb-4">`:''}
-                        </div>`).join('')}
+                      state.sceneHistory.map(scene => {
+                          if (scene.role === 'user') {
+                              const userAvatar = state.user?.avatar_url
+                                  ? `<img src="${state.user.avatar_url}" alt="Avatar" class="w-10 h-10 rounded-full object-cover mr-4">`
+                                  : `<div class="w-10 h-10 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold mr-4">${state.user?.username.charAt(0).toUpperCase()}</div>`;
+                              return `
+                                  <div class="flex items-start mb-6">
+                                      ${userAvatar}
+                                      <div class="bg-gray-800/50 p-4 rounded-lg w-full">
+                                          <p class="font-semibold text-white mb-2">${state.user.username}</p>
+                                          <p class="text-lg leading-relaxed text-gray-300">${scene.content}</p>
+                                      </div>
+                                  </div>
+                              `;
+                          } else { // 'assistant' or 'system'
+                              const aiAvatar = `<div class="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--secondary)] rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold mr-4">AI</div>`;
+                              return `
+                                  <div class="flex items-start mb-6">
+                                      ${aiAvatar}
+                                      <div class="flex-1">
+                                          <p class="font-semibold text-[var(--primary)] mb-2">AI-Мастер</p>
+                                          <p class="text-lg leading-relaxed text-gray-300">${scene.content}</p>
+                                          ${scene.image ? `<img src="${scene.image}" alt="Сцена" class="w-full h-80 object-cover rounded-lg mt-4">` : ''}
+                                      </div>
+                                  </div>
+                              `;
+                          }
+                      }).join('')}
                     ${state.isRolling?`
                       <div class="flex items-center space-x-2 text-[var(--primary)]">
                         <div class="w-2 h-2 bg-[var(--primary)] rounded-full animate-bounce"></div>
@@ -954,7 +1054,22 @@
       }
       on('leave','click',handleLogout);
       const startBtn=qs('#startGame'); if(startBtn) startBtn.addEventListener('click',()=>{ if(startBtn.dataset.enabled==='1') go('game'); });
-      on('lobbySend','click',()=>{ const inp=qs('#lobbyMsg'); if(inp && inp.value.trim()){ sendAction(inp.value); inp.value=''; }});
+      on('lobbySend','click',()=>{
+          const inp=qs('#lobbyMsg');
+          if(inp && inp.value.trim()){
+              sendChatMessage(inp.value);
+              inp.value='';
+          }
+      });
+      const lobbyMsgInput = qs('#lobbyMsg');
+      if (lobbyMsgInput) {
+          lobbyMsgInput.addEventListener('keydown', e => {
+              if (e.key === 'Enter') {
+                  e.preventDefault();
+                  qs('#lobbySend')?.click();
+              }
+          });
+      }
 
       // Game
       on('backToLobby','click',()=>go('lobby'));
@@ -1010,17 +1125,25 @@
       on('changeAvatarBtn', 'click', handleChangeAvatar);
     }
 
-    async function handleChangeAvatar() {
-        const newAvatarUrl = prompt("Enter the URL for your new avatar:");
-        if (newAvatarUrl && newAvatarUrl.trim() !== "") {
+    function handleChangeAvatar() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png, image/jpeg, image/gif';
+
+        input.onchange = async e => {
+            const file = e.target.files[0];
+            if (!file) return;
+
             try {
-                const updatedProfile = await api.updateAvatar(newAvatarUrl.trim());
+                const updatedProfile = await api.uploadAvatar(file);
                 state.user = updatedProfile;
                 render(); // Re-render to show the new avatar
             } catch (error) {
-                alert(`Error updating avatar: ${error.message}`);
+                alert(`Error uploading avatar: ${error.message}`);
             }
         }
+
+        input.click();
     }
 
     async function handleChangeUsername() {
@@ -1117,22 +1240,34 @@
     // ====== Вспомогательные рендер-функции ======
     function renderPlayers() {
       if (!state.currentRoom?.players || state.currentRoom.players.length === 0) return '';
+      const players = state.currentRoom.players;
+
       return `
         <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
           <h3 class="text-xl font-semibold mb-4">${t('players')}</h3>
           <div class="space-y-3">
-            ${state.currentRoom.players.map(p => `
+            ${players.map(p => {
+              const isMe = p.user_code === state.user?.user_code;
+              const hpPercentage = (p.hp / p.max_hp) * 100;
+              const avatarDisplay = p.avatar_url
+                ? `<img src="${p.avatar_url}" alt="Avatar" class="w-12 h-12 rounded-full object-cover">`
+                : `<div class="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-lg font-bold">${p.username.charAt(0).toUpperCase()}</div>`;
+
+              return `
               <div class="p-3 bg-gray-800/50 rounded-lg">
-                <div class="flex justify-between items-start mb-2">
-                  <span class="font-semibold">${p.is_me ? t('you') : p.name}</span>
-                  <span class="text-xs bg-purple-600 px-2 py-1 rounded">${p.class || 'Adventurer'}</span>
+                <div class="flex items-center space-x-3 mb-2">
+                    ${avatarDisplay}
+                    <div>
+                        <p class="font-semibold">${isMe ? t('you') : p.username}</p>
+                        <p class="text-xs text-gray-400">${p.is_host ? t('host') : 'Player'}</p>
+                    </div>
                 </div>
-                <div class="w-full bg-gray-700 rounded-full h-2">
-                  <div class="bg-gradient-to-r from-green-400 to-red-400 h-2 rounded-full" style="width:${(p.hp / p.max_hp) * 100}%"></div>
+                <div class="w-full bg-gray-700 rounded-full h-2.5">
+                  <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-2.5 rounded-full" style="width: ${hpPercentage}%"></div>
                 </div>
-                <div class="text-xs text-gray-400 mt-1">${p.hp} / ${p.max_hp} HP</div>
+                <div class="text-xs text-gray-400 mt-1 text-right">${p.hp} / ${p.max_hp} HP</div>
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
         </div>`;
     }
@@ -1157,6 +1292,45 @@
     function on(id,evt,handler){ const el=document.getElementById(id); if(el) el.addEventListener(evt,handler); }
     function onIn(root,sel,evt,handler){ const el=qs(sel,root); if(el) el.addEventListener(evt,handler); }
 
+    function processJournal(journal, players) {
+        if (!journal || !journal.lobby_chat) return [];
+        return journal.lobby_chat.map(msg => {
+            // The message 'role' is used to store the user_code of the sender
+            const player = players.find(p => p.user_code === msg.role);
+            const senderName = player ? player.username : 'Unknown';
+            return {
+                id: msg.timestamp, // Not unique, but best we have for now
+                text: msg.content,
+                sender: senderName,
+                timestamp: new Date(msg.timestamp).toLocaleTimeString()
+            };
+        });
+    }
+
+    function renderInventory() {
+        const me = state.currentRoom?.players?.find(p => p.user_code === state.user?.user_code);
+        if (!me || !me.inventory) return '';
+
+        return `
+        <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
+            <h3 class="text-xl font-semibold mb-4">Inventory</h3>
+            <div class="space-y-2">
+            ${me.inventory.length === 0
+                ? '<p class="text-sm text-gray-500">Your inventory is empty.</p>'
+                : me.inventory.map(item => `
+                    <div class="p-2 bg-gray-800/50 rounded-lg text-sm">
+                        <div class="flex justify-between items-center">
+                            <span class="font-semibold">${item.name}</span>
+                            ${item.max_uses ? `<span class="text-xs text-gray-400">${item.uses}/${item.max_uses}</span>` : ''}
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">${item.description || ''}</div>
+                    </div>
+                `).join('')
+            }
+            </div>
+        </div>`;
+    }
+
     // ====== Старт ======
     async function init() {
       // Load saved settings first
@@ -1166,24 +1340,46 @@
         state.language = savedSettings.language || 'ru';
         state.customTheme = savedSettings.customTheme || { primary: '#ff4500', secondary: '#8b0000', background: '#000000' };
       }
-      // No need to call applyTheme() here because render() will do it.
 
       const userCode = storage.getUserCode();
-      if (userCode) {
-        try {
-          state.user = await api.getMe();
-          state.campaigns = await api.getCampaigns();
-          go('landing');
-        } catch (error) {
-          // Token is invalid or expired
-          storage.removeUserCode();
-          state.user = null;
-          go('login');
-        }
-      } else {
+      if (!userCode) {
         go('login');
+        render(); // Render login page and stop.
+        return;
       }
-      render(); // Initial render after async check
+
+      // User is logged in, try to get their profile
+      try {
+        state.user = await api.getMe();
+        state.campaigns = await api.getCampaigns();
+
+        // Check if we were in a room and try to rejoin
+        const savedRoomCode = storage.getCurrentRoomCode();
+        if (savedRoomCode) {
+          try {
+            // We still hit the HTTP endpoint first to ensure we are in the player list
+            const roomDetails = await api.getRoomDetails(savedRoomCode);
+            state.currentRoom = roomDetails;
+            // The go('lobby') call will handle connecting the WebSocket
+            go('lobby');
+            return; // Stop execution, we are in the lobby now
+          } catch (e) {
+            console.warn("Could not rejoin room, it may have been closed.", e);
+            storage.clearCurrentRoomCode(); // Clean up invalid code
+          }
+        }
+
+        // If not rejoining a room, go to the main landing page
+        go('landing'); // This calls render()
+      } catch (error) {
+        // This likely means the user token is invalid or expired
+        console.error("Session token invalid, logging out.", error);
+        storage.removeUserCode();
+        storage.clearCurrentRoomCode();
+        state.user = null;
+        go('login');
+        render(); // Render login page
+      }
     }
 
     init();

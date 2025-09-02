@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+import shutil
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
+
+from server.core.config import ROOT_DIR
 
 from server.core import storage
 from server.core.models import UserSettings, UserProfile, UserProfileResponse
@@ -62,3 +66,39 @@ async def update_user_settings(
 
     storage.write_json(settings_path, settings.dict())
     return settings
+
+
+@router.post("/avatar", response_model=UserProfileResponse)
+async def upload_avatar(
+    current_user: UserProfile = Depends(get_current_user),
+    file: UploadFile = File(...)
+):
+    """Uploads a new avatar for the current user."""
+    # Validate file type
+    if file.content_type not in ["image/jpeg", "image/png", "image/gif"]:
+        raise HTTPException(status_code=400, detail="Invalid image type. Please use JPG, PNG, or GIF.")
+
+    # Generate a unique filename to avoid collisions
+    file_extension = file.filename.split('.')[-1]
+    unique_filename = f"{current_user.user_code}_{uuid.uuid4()}.{file_extension}"
+
+    avatars_dir = ROOT_DIR / "frontend/assets/avatars"
+    avatars_dir.mkdir(exist_ok=True) # Ensure directory exists
+
+    file_path = avatars_dir / unique_filename
+
+    # Save the file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    finally:
+        file.file.close()
+
+    # Update user profile with the new avatar URL
+    avatar_url = f"/assets/avatars/{unique_filename}"
+    current_user.avatar_url = avatar_url
+
+    profile_path = storage.get_user_profile_file(current_user.user_code)
+    storage.write_json(profile_path, current_user.dict())
+
+    return current_user

@@ -43,5 +43,10 @@ async def health_check():
 # --- Static Files Mounting ---
 # This must be placed last, as it will catch all other routes.
 # It serves the frontend application (index.html, css, js).
+assets_path = ROOT_DIR / "frontend/assets"
+assets_path.mkdir(exist_ok=True) # Ensure the assets directory exists
+(assets_path / "avatars").mkdir(exist_ok=True) # Ensure the avatars subdirectory exists
+app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
 frontend_path = ROOT_DIR / "frontend"
 app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")

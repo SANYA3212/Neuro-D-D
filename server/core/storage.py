@@ -88,6 +88,16 @@ def find_user_by_email(email: str) -> Optional[UserProfile]:
                 return UserProfile(**profile_data)
     return None
 
+def get_user_profile_by_code(user_code: str) -> Optional[UserProfile]:
+    """Reads a user's profile directly using their user_code."""
+    profile_path = get_user_profile_file(user_code)
+    if not profile_path:
+        return None
+    profile_data = read_json(profile_path)
+    if profile_data:
+        return UserProfile(**profile_data)
+    return None
+
 def add_user_to_index(user_profile: UserProfile):
     """Adds a user's email and code to the global index."""
     index = read_json(config.INDEX_FILE) or {"users": {}, "campaigns": {}}
@@ -110,6 +120,12 @@ def get_campaign_dir(user_code: str, campaign_id: str) -> Optional[Path]:
         return campaigns_dir / f"camp_{campaign_id}"
     except ValueError:
         return None
+
+def update_campaign_meta(user_code: str, campaign_id: str, meta_data: dict):
+    """Writes updated data to a campaign's meta.json file."""
+    meta_path = get_campaign_meta_file(user_code, campaign_id)
+    if meta_path:
+        write_json(meta_path, meta_data)
 
 def delete_campaign_files(user_code: str, campaign_id: str):
     """Deletes the entire directory for a given campaign."""
@@ -135,3 +151,29 @@ def get_all_rooms() -> List[Dict]:
 def write_all_rooms(rooms: List[Dict]):
     """Writes the list of all rooms."""
     write_json(config.ROOMS_FILE, rooms)
+
+def find_room_by_campaign_id(campaign_id: str) -> Optional[Dict]:
+    """Finds the first active room associated with a given campaign ID."""
+    all_rooms = get_all_rooms()
+    for room in all_rooms:
+        if room.get('campaign_id') == campaign_id:
+            return room
+    return None
+
+def remove_player_from_room(room_code: str, user_code: str):
+    """Removes a player from a room's list in rooms.json."""
+    all_rooms = get_all_rooms()
+    room_found = False
+    for room in all_rooms:
+        if room['room_code'] == room_code:
+            room_found = True
+            if user_code in room['players']:
+                room['players'].remove(user_code)
+                # If the host is the one leaving, the room should probably be deleted.
+                # For now, we just remove the player. If the player list becomes empty, delete room.
+                if not room['players']:
+                    all_rooms.remove(room)
+            break
+
+    if room_found:
+        write_all_rooms(all_rooms)
