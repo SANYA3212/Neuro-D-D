@@ -207,6 +207,20 @@
         state.ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
 
+            function processJournal(journal, players) {
+                if (!journal || !journal.lobby_chat) return [];
+                return journal.lobby_chat.map(msg => {
+                    const player = players.find(p => p.user_code === msg.role);
+                    const senderName = player ? player.username : 'Unknown';
+                    return {
+                        id: msg.timestamp,
+                        text: msg.content,
+                        sender: senderName,
+                        timestamp: new Date(msg.timestamp).toLocaleTimeString()
+                    };
+                });
+            }
+
             if (message.type === "new_message") {
                 state.chatMessages.push({
                     id: message.id,
@@ -374,8 +388,7 @@
       if (!action) return;
 
       const userMessage = { role: 'user', content: action };
-      // Optimistically update the UI with the user's message
-      state.chatMessages.push({ id: Date.now(), text: action, sender: state.user?.username || 'Игрок', timestamp: new Date().toLocaleTimeString() });
+      // This is the master/game log, not the player chat.
       state.sceneHistory.push(userMessage);
 
       // Show AI is thinking
@@ -397,7 +410,6 @@
 
         const assistantMessage = { role: 'assistant', content: aiResponse.text };
         state.sceneHistory.push(assistantMessage);
-        state.chatMessages.push({ id: Date.now(), text: aiResponse.text, sender: 'AI-Мастер', timestamp: new Date().toLocaleTimeString() });
 
         // Handle metadata
         if (aiResponse.meta) {
@@ -759,6 +771,7 @@
                         <span class="text-sm">${t('aiGenerating')}</span>
                       </div>`:''}
                   </div>
+                  ${renderFoundItem()}
                 </div>
 
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
@@ -1004,6 +1017,37 @@
       const gi=qs('#gameInput');
       on('gameSend','click',()=>{ if(gi){ sendAction(gi.value); gi.value=''; }});
       if(gi) gi.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); qs('#gameSend')?.click(); }});
+
+      on('takeItemBtn', 'click', async () => {
+        const lastMessage = state.sceneHistory[state.sceneHistory.length - 1];
+        const itemFound = lastMessage?.meta?.item_found;
+        if (!itemFound) return;
+
+        try {
+            const response = await fetch(`/api/rooms/${state.currentRoom.room_code}/inventory/add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_code: state.user.user_code,
+                    item: itemFound,
+                })
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to take item');
+            }
+            // The websocket message will trigger a re-render, but to prevent
+            // the user from clicking again, we can hide it immediately.
+            lastMessage.meta.item_found = null;
+            render();
+
+        } catch (error) {
+            console.error('Error taking item:', error);
+            // Optionally, show an error to the user
+            alert(`Error: ${error.message}`);
+        }
+      });
+
       document.querySelectorAll('[data-quick]').forEach(b=>{
         b.addEventListener('click',()=>{
           const label=b.getAttribute('data-quick'); const input=qs('#gameInput');
@@ -1209,19 +1253,28 @@
     function on(id,evt,handler){ const el=document.getElementById(id); if(el) el.addEventListener(evt,handler); }
     function onIn(root,sel,evt,handler){ const el=qs(sel,root); if(el) el.addEventListener(evt,handler); }
 
-    function processJournal(journal, players) {
-        if (!journal || !journal.lobby_chat) return [];
-        return journal.lobby_chat.map(msg => {
-            // The message 'role' is used to store the user_code of the sender
-            const player = players.find(p => p.user_code === msg.role);
-            const senderName = player ? player.username : 'Unknown';
-            return {
-                id: msg.timestamp, // Not unique, but best we have for now
-                text: msg.content,
-                sender: senderName,
-                timestamp: new Date(msg.timestamp).toLocaleTimeString()
-            };
-        });
+    function renderFoundItem() {
+        const lastMessage = state.sceneHistory[state.sceneHistory.length - 1];
+        const itemFound = lastMessage?.meta?.item_found;
+
+        if (!itemFound || typeof itemFound !== 'object') {
+            return '';
+        }
+
+        // Check if this item is already in our inventory
+        const me = state.currentRoom?.players?.find(p => p.user_code === state.user?.user_code);
+        const alreadyHaveIt = me?.inventory?.some(i => i.name === itemFound.name);
+        if (alreadyHaveIt) {
+            return ''; // Don't show the take button if we already have it
+        }
+
+        return `
+        <div class="mt-4 p-4 border border-yellow-500/50 bg-yellow-900/20 rounded-lg text-center">
+            <p class="font-bold text-yellow-400 mb-2">Item Found: ${itemFound.name}</p>
+            <p class="text-sm text-gray-300 mb-3">${itemFound.description || ''}</p>
+            <button id="takeItemBtn" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg font-semibold transition-colors">Take Item</button>
+        </div>
+        `;
     }
 
     function renderInventory() {
