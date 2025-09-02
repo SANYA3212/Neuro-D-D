@@ -207,20 +207,6 @@
         state.ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
 
-            function processJournal(journal, players) {
-                if (!journal || !journal.lobby_chat) return [];
-                return journal.lobby_chat.map(msg => {
-                    const player = players.find(p => p.user_code === msg.role);
-                    const senderName = player ? player.username : 'Unknown';
-                    return {
-                        id: msg.timestamp,
-                        text: msg.content,
-                        sender: senderName,
-                        timestamp: new Date(msg.timestamp).toLocaleTimeString()
-                    };
-                });
-            }
-
             if (message.type === "new_message") {
                 state.chatMessages.push({
                     id: message.id,
@@ -431,6 +417,20 @@
       { name:'Cyberpunk', background:'#0a0a12', primary:'#ff00ff', secondary:'#00ffff' },
       { name:'Forest', background:'#0d1b0d', primary:'#4caf50', secondary:'#8bc34a' },
     ];}
+
+    function processJournal(journal, players) {
+        if (!journal || !journal.lobby_chat) return [];
+        return journal.lobby_chat.map(msg => {
+            const player = players.find(p => p.user_code === msg.role);
+            const senderName = player ? player.username : 'Unknown';
+            return {
+                id: msg.timestamp,
+                text: msg.content,
+                sender: senderName,
+                timestamp: new Date(msg.timestamp).toLocaleTimeString()
+            };
+        });
+    }
 
     // ====== Страницы ======
     const pages = {
