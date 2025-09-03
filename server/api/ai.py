@@ -78,7 +78,7 @@ async def get_ai_completion(
 - Campaign Name: {campaign_meta.name}
 - Tone: {campaign_meta.tone}
 - Difficulty: {campaign_meta.difficulty}
-- Language: {user_settings.language}
+- Language: {request.language or user_settings.language}
 - Last Dice Roll: {request.last_dice_roll if request.last_dice_roll else 'N/A'}
 ---
 """

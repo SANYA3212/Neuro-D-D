@@ -104,7 +104,7 @@
       getCampaigns: () => api.fetchJSON('/campaigns'),
       updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
       updateAvatar: (avatar_url) => api.fetchJSON('/users/profile', { method: 'PUT', body: { avatar_url } }),
-      getAiCompletion: (campaignId, messages, lastDiceRoll) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages, last_dice_roll: lastDiceRoll } }),
+      getAiCompletion: (campaignId, messages, lastDiceRoll, language) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages, last_dice_roll: lastDiceRoll, language: language } }),
       createRoom: (isPublic, name) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name } }),
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
@@ -406,7 +406,7 @@
         const lastDiceRoll = state.diceRoll ? state.diceRoll.result : null;
         state.diceRoll = null;
 
-        const aiResponse = await api.getAiCompletion(campaignId, messagesForApi, lastDiceRoll);
+        const aiResponse = await api.getAiCompletion(campaignId, messagesForApi, lastDiceRoll, state.language);
 
         const assistantMessage = { role: 'assistant', content: aiResponse.text };
         state.sceneHistory.push(assistantMessage);
@@ -425,6 +425,17 @@
         state.isRolling = false;
         render();
       }
+    }
+    function sendChatMessage(text) {
+        if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+            console.error("WebSocket is not connected.");
+            // Optionally, add a user-facing error message here
+            return;
+        }
+        const message = text.trim();
+        if (message) {
+            state.ws.send(JSON.stringify({ type: 'chat', text: message }));
+        }
     }
     function themePresets(){ return [
       { name:t('darkTheme'), background:'#000000', primary:'#ff4500', secondary:'#8b0000' },
@@ -1007,7 +1018,8 @@
       }
       on('leave','click',handleLogout);
       const startBtn=qs('#startGame'); if(startBtn) startBtn.addEventListener('click',()=>{ if(startBtn.dataset.enabled==='1') go('game'); });
-      on('lobbySend','click',()=>{ const inp=qs('#lobbyMsg'); if(inp && inp.value.trim()){ sendAction(inp.value); inp.value=''; }});
+      on('lobbySend','click',()=>{ const inp=qs('#lobbyMsg'); if(inp && inp.value.trim()){ sendChatMessage(inp.value); inp.value=''; }});
+      const lobbyInp=qs('#lobbyMsg'); if(lobbyInp) lobbyInp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); qs('#lobbySend')?.click(); }});
 
       // Game
       on('backToLobby','click',()=>go('lobby'));
@@ -1054,6 +1066,22 @@
           if(input){ input.value = (label==='Бросить куб') ? 'd20' : label+': '; input.focus(); }
           if(label==='Бросить куб') openDiceModal();
         });
+      });
+
+      // In-game chat
+      on('chatSend', 'click', () => {
+          const inp = qs('#chatInput');
+          if (inp && inp.value.trim()) {
+              sendChatMessage(inp.value);
+              inp.value = '';
+          }
+      });
+      const chatInp = qs('#chatInput');
+      if (chatInp) chatInp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+              e.preventDefault();
+              qs('#chatSend')?.click();
+          }
       });
 
       // Settings

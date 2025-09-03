@@ -155,6 +155,7 @@ class AICompleteRequest(BaseModel):
     messages: List[Message]
     context: Optional[Dict[str, Any]] = None
     last_dice_roll: Optional[int] = None
+    language: Optional[str] = None
 
 class AICompleteResponse(BaseModel):
     text: str
