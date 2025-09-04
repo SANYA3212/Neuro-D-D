@@ -1025,7 +1025,8 @@
       if (startBtn) {
           const room = state.currentRoom;
           const isHost = room?.host_user_code === state.user?.user_code;
-          const allReady = room && room.players.length > 0 && room.players.length === room.ready_players.length;
+          // Defensive check for ready_players to handle old room data
+          const allReady = room && room.players.length > 0 && room.ready_players && room.players.length === room.ready_players.length;
 
           if (isHost && allReady) {
               startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
