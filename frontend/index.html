@@ -228,7 +228,7 @@
                     sender: message.sender,
                     timestamp: new Date(message.timestamp).toLocaleTimeString()
                 });
-                if (state.currentPage === 'lobby') render();
+                if (state.currentPage === 'lobby' || state.currentPage === 'game') render();
 
             } else if (message.room_code) { // This is a full room_update
                 state.currentRoom = message;
@@ -418,8 +418,6 @@
         }
 
       } catch (error) {
-        const errorMessage = { role: 'system', content: `Error from AI: ${error.message}` };
-        state.sceneHistory.push(errorMessage);
         state.chatMessages.push({ id: Date.now(), text: `Ошибка: ${error.message}`, sender: 'System', timestamp: new Date().toLocaleTimeString() });
       } finally {
         state.isRolling = false;

@@ -120,9 +120,29 @@ async def get_ai_completion(
         # 4. Parse and process response
         parsed_response = parse_ai_response(response.text)
         meta = parsed_response.meta
+        state_changed = False
+
+        # --- Persist AI response to journal ---
+        # This is critical for synchronization, as it saves the AI's narrative.
+        journal_path = storage.get_campaign_journal_file(campaign_meta.host_user_code, str(campaign_meta.id))
+        journal_data = storage.read_json(journal_path)
+        if journal_data is not None:
+            journal = CampaignJournal(**journal_data)
+
+            # Add user's message to journal
+            journal.entries.append(request.messages[-1])
+
+            # Add AI's message to journal
+            assistant_message = Message(role='assistant', content=parsed_response.text)
+            journal.entries.append(assistant_message)
+
+            storage.write_json(journal_path, journal.dict())
+            state_changed = True # The journal state has changed, so we must broadcast.
+        else:
+            print(f"WARNING: Could not find journal to save AI response for campaign {campaign_meta.id}")
+
 
         if meta:
-            state_changed = False
             # Handle HP changes
             hp_change = meta.get("hp_change")
             if isinstance(hp_change, int):
@@ -142,15 +162,17 @@ async def get_ai_completion(
                         player_state.inventory.append(new_item)
                         state_changed = True
 
-            if state_changed:
-                storage.update_campaign_meta(campaign_meta.host_user_code, str(campaign_meta.id), campaign_meta.dict())
+        if state_changed:
+            # Save the metadata changes (HP, inventory)
+            storage.update_campaign_meta(campaign_meta.host_user_code, str(campaign_meta.id), campaign_meta.dict())
 
-                # Find the room and broadcast the update
-                room = storage.find_room_by_campaign_id(str(campaign_meta.id))
-                if room:
-                    updated_room_details = await get_room_details_logic(room['room_code'])
-                    if updated_room_details:
-                        await manager.broadcast(updated_room_details.dict(), room['room_code'])
+            # Find the room and broadcast the all-inclusive update
+            room = storage.find_room_by_campaign_id(str(campaign_meta.id))
+            if room:
+                print(f"BROADCASTING state update to room {room['room_code']} due to state change.")
+                updated_room_details = await get_room_details_logic(room['room_code'])
+                if updated_room_details:
+                    await manager.broadcast(updated_room_details.dict(), room['room_code'])
 
         return parsed_response
 
