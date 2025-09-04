@@ -68,7 +68,8 @@ class Room(BaseModel):
     host_user_code: str
     name: Optional[str] = None
     is_public: bool = False
-    players: List[str] = [] # List of user_codes
+    players: List[str] = Field(default_factory=list) # List of user_codes
+    ready_players: List[str] = Field(default_factory=list) # List of user_codes who are ready
     campaign_id: Optional[str] = None # Link to the campaign, if any
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

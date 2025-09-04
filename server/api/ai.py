@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from server.core import config, storage
 from server.core.connections import manager
 from server.core.models import (
-    AICompleteRequest, AICompleteResponse, Message, CampaignMeta, GameItem
+    AICompleteRequest, AICompleteResponse, Message, CampaignMeta, GameItem, CampaignJournal
 )
 from server.api.auth import get_current_user_code
 from server.game_logic.engine import get_room_details_logic

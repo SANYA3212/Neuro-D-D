@@ -230,6 +230,8 @@
                 });
                 if (state.currentPage === 'lobby' || state.currentPage === 'game') render();
 
+            } else if (message.type === "game_starting") {
+                go('game');
             } else if (message.room_code) { // This is a full room_update
                 state.currentRoom = message;
                 state.sceneHistory = message.journal?.entries || [];
@@ -665,6 +667,7 @@
       lobby(){ const room=state.currentRoom;
         const playersHTML = (room?.players && state.user) ? room.players.map(player => {
             const isMe = player.user_code === state.user.user_code;
+            const isReady = room.ready_players?.includes(player.user_code);
             const avatarDisplay = player.avatar_url
                 ? `<img src="${player.avatar_url}" alt="Avatar" class="w-10 h-10 rounded-full object-cover">`
                 : `<div class="w-10 h-10 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-sm font-bold">${(player.username || '?').charAt(0).toUpperCase()}</div>`;
@@ -679,11 +682,15 @@
                       ${player.is_host ? `<span class="text-xs text-purple-400">${t('host')}</span>` : ''}
                     </div>
                   </div>
-                  <div class="w-3 h-3 rounded-full bg-green-500" title="Online"></div>
+                  ${isReady ? '<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white">✓</div>' : '<div class="w-5 h-5 rounded-full bg-gray-600"></div>'}
                 </div>
               </div>
             `;
           }).join('') : '<p>Loading players...</p>';
+
+        const isSelfReady = room?.ready_players?.includes(state.user?.user_code);
+        const readyButtonText = isSelfReady ? `${t('ready')} ✅` : t('notReady');
+        const readyButtonClass = `w-full py-3 rounded-lg font-semibold transition-all ${isSelfReady ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'}`;
 
         return `
         <div class="min-h-screen bg-[var(--background)] text-white">
@@ -696,7 +703,7 @@
                   <div class="space-y-4 mb-6">
                     ${playersHTML}
                   </div>
-                  <button id="toggleReady" class="w-full py-3 rounded-lg font-semibold transition-all bg-gray-600 hover:bg-gray-700">${t('notReady')}</button>
+                  <button id="toggleReady" class="${readyButtonClass}">${readyButtonText}</button>
                 </div>
               </div>
               <div class="lg:col-span-2 space-y-8">
@@ -726,7 +733,15 @@
                     </div>
                     <div>
                       <h3 class="text-lg font-semibold mb-3">${t('chat')}</h3>
-                      <div class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto"><div class="space-y-2 text-sm"><div class="text-[var(--primary)]">${t('system')}: ${t('youJoined')}</div></div></div>
+                      <div id="lobbyChatBox" class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto">
+                        <div class="space-y-3 text-sm">
+                          ${state.chatMessages.map(msg=>`
+                            <div class="${msg.sender==='system'?'text-[var(--primary)] italic':''}">
+                              ${msg.sender!=='system'?`<div class="font-semibold text-[var(--primary)]">${msg.sender}</div>`:''}
+                              <div>${msg.text}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
+                            </div>`).join('')}
+                        </div>
+                      </div>
                       <div class="flex gap-2"><input id="lobbyMsg" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="${t('message')}"><button id="lobbySend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button></div>
                     </div>
                   </div>
@@ -1000,22 +1015,27 @@
       on('joinByCode','click',()=> rc && rc.value.trim() && handleJoinRoom(rc.value.trim().toUpperCase()));
 
       // Lobby
-      let ready=false;
-      const toggleReadyBtn=qs('#toggleReady');
-      if(toggleReadyBtn){
-        toggleReadyBtn.addEventListener('click',()=>{
-          ready=!ready;
-          toggleReadyBtn.textContent = ready ? `${t('ready')} ✅` : t('notReady');
-          toggleReadyBtn.className = `w-full py-3 rounded-lg font-semibold transition-all ${ready?'bg-green-600 hover:bg-green-700':'bg-gray-600 hover:bg-gray-700'}`;
-          const startBtn=qs('#startGame');
-          if(startBtn){
-            if(ready){ startBtn.classList.remove('opacity-50','cursor-not-allowed'); startBtn.dataset.enabled='1'; }
-            else{ startBtn.classList.add('opacity-50','cursor-not-allowed'); startBtn.dataset.enabled=''; }
-          }
-        });
-      }
+      on('toggleReady', 'click', () => {
+          if(state.ws) state.ws.send(JSON.stringify({ type: 'player_ready' }));
+      });
+
       on('leave','click',handleLogout);
-      const startBtn=qs('#startGame'); if(startBtn) startBtn.addEventListener('click',()=>{ if(startBtn.dataset.enabled==='1') go('game'); });
+
+      const startBtn=qs('#startGame');
+      if (startBtn) {
+          const room = state.currentRoom;
+          const isHost = room?.host_user_code === state.user?.user_code;
+          const allReady = room && room.players.length > 0 && room.players.length === room.ready_players.length;
+
+          if (isHost && allReady) {
+              startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+              startBtn.addEventListener('click', () => {
+                  if(state.ws) state.ws.send(JSON.stringify({ type: 'start_game' }));
+              });
+          } else {
+              startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+          }
+      }
 
       // Lobby Chat
       on('lobbySend','click',()=>{

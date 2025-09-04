@@ -153,6 +153,37 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                     room_code
                 )
 
+            elif data.get("type") == "player_ready":
+                all_rooms = storage.get_all_rooms()
+                room_data = next((r for r in all_rooms if r['room_code'] == room_code), None)
+                if room_data:
+                    room = Room(**room_data)
+                    if user_code in room.ready_players:
+                        room.ready_players.remove(user_code)
+                    else:
+                        room.ready_players.append(user_code)
+
+                    # Update the room in storage
+                    for i, r in enumerate(all_rooms):
+                        if r['room_code'] == room.room_code:
+                            all_rooms[i] = room.dict()
+                            break
+                    storage.write_all_rooms(all_rooms)
+
+                    # Broadcast the change
+                    updated_room_details = await get_room_details_logic(room.room_code)
+                    if updated_room_details:
+                        await manager.broadcast(updated_room_details.dict(), room.room_code)
+
+            elif data.get("type") == "start_game":
+                all_rooms = storage.get_all_rooms()
+                room_data = next((r for r in all_rooms if r['room_code'] == room_code), None)
+                if room_data:
+                    room = Room(**room_data)
+                    # Check if the sender is the host and everyone is ready
+                    if user_code == room.host_user_code and set(room.players) == set(room.ready_players):
+                        await manager.broadcast({"type": "game_starting"}, room.room_code)
+
     except WebSocketDisconnect:
         manager.disconnect(websocket, room_code)
         # Remove player from the room data and broadcast the update
