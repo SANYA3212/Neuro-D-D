@@ -1018,14 +1018,30 @@
       }
       on('leave','click',handleLogout);
       const startBtn=qs('#startGame'); if(startBtn) startBtn.addEventListener('click',()=>{ if(startBtn.dataset.enabled==='1') go('game'); });
-      on('lobbySend','click',()=>{ const inp=qs('#lobbyMsg'); if(inp && inp.value.trim()){ sendChatMessage(inp.value); inp.value=''; }});
-      const lobbyInp=qs('#lobbyMsg'); if(lobbyInp) lobbyInp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); qs('#lobbySend')?.click(); }});
+
+      // Lobby Chat
+      on('lobbySend','click',()=>{
+          const inp=qs('#lobbyMsg');
+          if(inp && inp.value.trim()){
+              sendChatMessage(inp.value);
+              inp.value='';
+          }
+      });
+      const lobbyInp=qs('#lobbyMsg');
+      if(lobbyInp) lobbyInp.addEventListener('keydown',e=>{
+          if(e.key==='Enter'){
+              e.preventDefault();
+              qs('#lobbySend')?.click();
+          }
+      });
 
       // Game
       on('backToLobby','click',()=>go('lobby'));
       on('toggleMute','click',()=>{ state.isMuted=!state.isMuted; render(); });
       on('toggleMic','click',()=>{ state.isMicrophoneActive=!state.isMicrophoneActive; render(); });
       on('openSettings','click',()=>openSettingsModal());
+
+      // Game Actions
       const gi=qs('#gameInput');
       on('gameSend','click',()=>{ if(gi){ sendAction(gi.value); gi.value=''; }});
       if(gi) gi.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); qs('#gameSend')?.click(); }});
