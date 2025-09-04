@@ -115,10 +115,6 @@ async def get_ai_completion(
         for msg in request.messages:
             final_prompt_list.append(f"**{msg.role.capitalize()}:** {msg.content}")
 
-        print("--- FINAL PROMPT TO AI ---")
-        print("\n".join(final_prompt_list))
-        print("--------------------------")
-
         response = model.generate_content("\n".join(final_prompt_list))
 
         # 4. Parse and process response
