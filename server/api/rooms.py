@@ -121,6 +121,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "chat":
+                print(f"Received chat message from {user_code} in room {room_code}: {data.get('text')}")
                 profile = storage.get_user_profile_by_code(user_code)
                 username = profile.username if profile else "Unknown"
 
@@ -135,11 +136,15 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                     journal_path = storage.get_campaign_journal_file(host_user_code, campaign_id)
 
                     if journal_path:
+                        print(f"Attempting to write to journal: {journal_path}")
                         journal_data = storage.read_json(journal_path)
                         if journal_data is not None:
                             journal = CampaignJournal(**journal_data)
                             journal.lobby_chat.append(new_message)
                             storage.write_json(journal_path, journal.dict())
+                            print(f"Successfully wrote to journal for campaign {campaign_id}")
+                        else:
+                            print(f"Warning: Journal file not found or empty for campaign {campaign_id}")
 
                 # --- Broadcast message to all clients ---
                 await manager.broadcast(
