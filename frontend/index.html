@@ -748,7 +748,9 @@
                 </div>
                 <div class="flex justify-end space-x-4">
                   <button id="leave" class="px-6 py-3 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors">${t('logout')}</button>
-                  <button id="startGame" class="px-8 py-3 bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 rounded-lg font-semibold transition-all opacity-50 cursor-not-allowed">${t('startGame')}</button>
+                  ${room?.host_user_code === state.user?.user_code ? `
+                    <button id="startGame" class="px-8 py-3 bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 rounded-lg font-semibold transition-all opacity-50 cursor-not-allowed">${t('startGame')}</button>
+                  ` : ''}
                 </div>
               </div>
             </div>
@@ -1016,7 +1018,11 @@
 
       // Lobby
       on('toggleReady', 'click', () => {
-          if(state.ws) state.ws.send(JSON.stringify({ type: 'player_ready' }));
+          if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+              state.ws.send(JSON.stringify({ type: 'player_ready' }));
+          } else {
+              console.error("WebSocket not connected, cannot toggle ready state.");
+          }
       });
 
       on('leave','click',handleLogout);
