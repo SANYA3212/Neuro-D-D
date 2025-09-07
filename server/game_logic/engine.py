@@ -3,7 +3,7 @@ from fastapi import HTTPException
 
 from server.core import storage
 from server.core.models import (
-    Room, RoomDetailsResponse, PlayerInfo, CampaignMeta, Message
+    Room, RoomDetailsResponse, PlayerInfo, CampaignMeta, Message, CampaignJournal
 )
 
 # This is a placeholder for the main game engine logic.
