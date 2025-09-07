@@ -124,7 +124,8 @@ class RoomDetailsResponse(BaseModel):
     host_user_code: str
     name: Optional[str] = None
     is_public: bool = False
-    players: List[PlayerInfo] = []
+    players: List[PlayerInfo] = Field(default_factory=list)
+    ready_players: List[str] = Field(default_factory=list)
     created_at: datetime
     journal: Optional[CampaignJournal] = None # Include the journal for state restoration
 

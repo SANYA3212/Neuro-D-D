@@ -113,6 +113,29 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                     if updated_room_details:
                         await manager.broadcast(updated_room_details.dict(), room.room_code)
 
+            elif data.get("type") == "use_item":
+                item_id = data.get("itemId")
+                all_rooms = storage.get_all_rooms()
+                room_data = next((r for r in all_rooms if r['room_code'] == room_code), None)
+                if room_data and room_data.get("campaign_id"):
+                    campaign_id = room_data["campaign_id"]
+                    host_user_code = room_data["host_user_code"]
+                    campaign_meta = storage.get_campaign_meta(host_user_code, campaign_id)
+
+                    if campaign_meta and user_code in campaign_meta.player_states:
+                        player_state = campaign_meta.player_states[user_code]
+
+                        # Find and remove the item
+                        item_to_remove = next((item for item in player_state.inventory if str(item.id) == item_id), None)
+                        if item_to_remove:
+                            player_state.inventory.remove(item_to_remove)
+                            storage.update_campaign_meta(host_user_code, campaign_id, campaign_meta.dict())
+
+                            # Broadcast the change
+                            updated_room_details = await get_room_details_logic(room_code)
+                            if updated_room_details:
+                                await manager.broadcast(updated_room_details.dict(), room_code)
+
             elif data.get("type") == "start_game":
                 all_rooms = storage.get_all_rooms()
                 room_data = next((r for r in all_rooms if r['room_code'] == room_code), None)

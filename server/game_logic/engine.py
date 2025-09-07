@@ -1,16 +1,16 @@
-from typing import Dict, Any, Optional
-from fastapi import HTTPException
+from typing import Optional
 from fastapi.encoders import jsonable_encoder
 
 from server.core import storage
 from server.core.models import (
-    Room, RoomDetailsResponse, PlayerInfo, CampaignMeta, Message, CampaignJournal, PlayerState
+    Room, RoomDetailsResponse, PlayerInfo, CampaignMeta, CampaignJournal, PlayerState
 )
 
 async def get_room_details_logic(room_code: str) -> Optional[RoomDetailsResponse]:
     """
     A reusable function to get all details for a room.
     It fetches the room, the campaign state, and enriches player data.
+    This function is critical for state synchronization.
     Returns None if the room doesn't exist.
     """
     all_rooms = storage.get_all_rooms()
@@ -21,43 +21,54 @@ async def get_room_details_logic(room_code: str) -> Optional[RoomDetailsResponse
 
     room = Room(**room_data)
 
-    # Load campaign meta and journal if it exists
+    # Load campaign meta and journal if a campaign is associated with the room
     campaign_meta = None
     journal = None
     if room.campaign_id:
-        # The host's user_code is needed to find the campaign files
         host_user_code = room.host_user_code
         meta_path = storage.get_campaign_meta_file(host_user_code, room.campaign_id)
-        journal_path = storage.get_campaign_journal_file(host_user_code, room.campaign_id)
-
-        if meta_path and journal_path:
+        if meta_path:
             meta_data = storage.read_json(meta_path)
-            journal_data = storage.read_json(journal_path)
             if meta_data:
                 campaign_meta = CampaignMeta(**meta_data)
+
+        journal_path = storage.get_campaign_journal_file(host_user_code, room.campaign_id)
+        if journal_path:
+            journal_data = storage.read_json(journal_path)
             if journal_data:
                 journal = CampaignJournal(**journal_data)
 
+    # --- THIS IS THE REWORKED LOGIC ---
+    # Always iterate through players. Conditionally access campaign data inside the loop.
     player_profiles = []
-    if campaign_meta:
-        for player_code in room.players:
-            profile = storage.get_user_profile_by_code(player_code)
-            if profile:
-                player_state = campaign_meta.player_states.get(player_code)
-                if not player_state:
-                    player_state = PlayerState() # Create default if not exists
+    for player_code in room.players:
+        profile = storage.get_user_profile_by_code(player_code)
+        if not profile:
+            continue # Skip if profile not found for some reason
 
-                player_profiles.append(
-                    PlayerInfo(
-                        user_code=profile.user_code,
-                        username=profile.username,
-                        avatar_url=profile.avatar_url,
-                        is_host=(profile.user_code == room.host_user_code),
-                        hp=player_state.hp,
-                        max_hp=player_state.max_hp,
-                        inventory=player_state.inventory
-                    )
-                )
+        hp = 20
+        max_hp = 20
+        inventory = []
+
+        # Get player-specific state only if a campaign exists
+        if campaign_meta:
+            player_state = campaign_meta.player_states.get(player_code)
+            if player_state:
+                hp = player_state.hp
+                max_hp = player_state.max_hp
+                inventory = player_state.inventory
+
+        player_profiles.append(
+            PlayerInfo(
+                user_code=profile.user_code,
+                username=profile.username,
+                avatar_url=profile.avatar_url,
+                is_host=(profile.user_code == room.host_user_code),
+                hp=hp,
+                max_hp=max_hp,
+                inventory=inventory
+            )
+        )
 
     return RoomDetailsResponse(
         room_code=room.room_code,

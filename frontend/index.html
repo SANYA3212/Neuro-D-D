@@ -828,7 +828,10 @@
                     </div>
                   </div>
                   <div class="p-4 border-t border-gray-800">
-                    <div class="flex gap-2"><input id="chatInput" type="text" placeholder="${t('message')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"><button id="chatSend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-3 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button></div>
+                    <div class="flex gap-2">
+                        <input id="chatInput" type="text" placeholder="${t('message')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        <button id="chatSend" class="bg-[var(--primary)] hover:bg-[var(--primary)]/90 px-3 py-2 rounded-lg text-sm font-semibold transition-colors">↵</button>
+                    </div>
                   </div>
                 </div>
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
@@ -1045,20 +1048,25 @@
       }
 
       // Lobby Chat
-      on('lobbySend','click',()=>{
-          const inp=qs('#lobbyMsg');
-          if(inp && inp.value.trim()){
-              sendChatMessage(inp.value);
-              inp.value='';
-          }
-      });
-      const lobbyInp=qs('#lobbyMsg');
-      if(lobbyInp) lobbyInp.addEventListener('keydown',e=>{
-          if(e.key==='Enter'){
-              e.preventDefault();
-              qs('#lobbySend')?.click();
-          }
-      });
+      const lobbyChatInput = qs('#lobbyMsg');
+      const lobbySendButton = qs('#lobbySend');
+
+      if (lobbySendButton) {
+          lobbySendButton.addEventListener('click', () => {
+              if (lobbyChatInput && lobbyChatInput.value.trim()) {
+                  sendChatMessage(lobbyChatInput.value);
+                  lobbyChatInput.value = '';
+              }
+          });
+      }
+      if (lobbyChatInput) {
+          lobbyChatInput.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') {
+                  e.preventDefault();
+                  lobbySendButton?.click();
+              }
+          });
+      }
 
       // Game
       on('backToLobby','click',()=>go('lobby'));
@@ -1106,6 +1114,16 @@
           const label=b.getAttribute('data-quick'); const input=qs('#gameInput');
           if(input){ input.value = (label==='Бросить куб') ? 'd20' : label+': '; input.focus(); }
           if(label==='Бросить куб') openDiceModal();
+        });
+      });
+
+      // Use item
+      document.querySelectorAll('.btn-use-item').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const itemId = e.currentTarget.dataset.itemId;
+            if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                state.ws.send(JSON.stringify({ type: 'use_item', itemId: itemId }));
+            }
         });
       });
 
@@ -1364,8 +1382,8 @@
                         </div>
                         <div class="text-xs text-gray-400 mt-1 mb-2">${item.description || ''}</div>
                         <div class="flex gap-2">
-                            <button class="flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Use</button>
-                            <button class="flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Give</button>
+                            <button data-item-id="${item.id}" class="btn-use-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Use</button>
+                            <button data-item-id="${item.id}" class="btn-give-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Give</button>
                         </div>
                     </div>
                 `).join('')
