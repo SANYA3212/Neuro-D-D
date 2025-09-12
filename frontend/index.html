@@ -962,223 +962,165 @@
     };
 
     // ====== Рендер и события ======
-    function render(){
-      applyTheme();
-      const root=document.getElementById('app');
-      root.innerHTML = (pages[state.currentPage]||pages.landing)();
+    function render() {
+        console.log("--- RENDER START ---");
+        console.log("Current Page:", state.currentPage);
+        console.log("Current Room:", JSON.parse(JSON.stringify(state.currentRoom)));
 
-      // Навигация/хедер
-      on('toLogin','click',()=>go('login'));
-      on('toRegister','click',()=>go('register'));
-      on('btnCreateRoom','click',handleCreateRoom);
-      on('btnJoinRoom','click',()=>go('join-room'));
-      on('btnContinue','click',()=> {
-        if (!state.user) return go('login');
-        if (state.campaigns && state.campaigns.length > 0) {
+        applyTheme();
+        const root = document.getElementById('app');
+        root.innerHTML = (pages[state.currentPage] || pages.landing)();
+
+        // A helper to safely add event listeners
+        const addListener = (id, event, handler) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener(event, handler);
+            } else {
+                // This log is useful for debugging missing elements
+                // console.log(`Element with id '${id}' not found for event listener.`);
+            }
+        };
+
+        // --- Global Navigation ---
+        addListener('toLogin', 'click', () => go('login'));
+        addListener('toRegister', 'click', () => go('register'));
+        addListener('btnCreateRoom', 'click', () => go('new-game'));
+        addListener('btnJoinRoom', 'click', () => go('join-room'));
+        addListener('btnContinue', 'click', () => {
+            if (!state.user) return go('login');
             go('saved-campaigns');
-        } else {
-            go('new-game');
+        });
+        addListener('toProfile', 'click', () => go('profile'));
+        addListener('toTutorial', 'click', () => go('tutorial'));
+        addListener('toSettings', 'click', () => go('settings'));
+        addListener('doLogout', 'click', handleLogout);
+        addListener('back', 'click', () => go('landing'));
+
+        // --- Page-Specific Logic ---
+        switch (state.currentPage) {
+            case 'login':
+                const loginForm = document.getElementById('loginForm');
+                if (loginForm) loginForm.addEventListener('submit', (e) => { e.preventDefault(); handleLogin(loginForm); });
+                addListener('goRegister', 'click', () => go('register'));
+                break;
+
+            case 'register':
+                const registerForm = document.getElementById('registerForm');
+                if (registerForm) registerForm.addEventListener('submit', (e) => { e.preventDefault(); handleRegister(registerForm); });
+                addListener('goLogin', 'click', () => go('login'));
+                break;
+
+            case 'new-game':
+                const newGameForm = document.getElementById('newGameForm');
+                if(newGameForm) newGameForm.addEventListener('submit', e => { e.preventDefault(); handleStartCampaign(newGameForm); });
+                break;
+
+            case 'join-room':
+                addListener('joinByCode', 'click', () => {
+                    const roomCodeInput = document.getElementById('roomCode');
+                    if (roomCodeInput && roomCodeInput.value) {
+                        handleJoinRoom(roomCodeInput.value.trim().toUpperCase());
+                    }
+                });
+                break;
+
+            case 'lobby':
+                console.log("Attaching lobby listeners...");
+                // Ready Button
+                addListener('toggleReady', 'click', () => {
+                    console.log("Toggle Ready button clicked.");
+                    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                        console.log("WebSocket is open, sending 'player_ready' message.");
+                        state.ws.send(JSON.stringify({ type: 'player_ready' }));
+                    } else {
+                        console.error("WebSocket not connected, cannot toggle ready state.");
+                    }
+                });
+
+                // Start Game Button (conditionally rendered)
+                const startBtn = document.getElementById('startGame');
+                if (startBtn) {
+                    const room = state.currentRoom;
+                    const allReady = room && room.players.length > 0 && room.ready_players && room.players.length === room.ready_players.length;
+                    if (allReady) {
+                        startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        startBtn.addEventListener('click', () => {
+                            console.log("Start Game button clicked.");
+                            if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                                console.log("WebSocket is open, sending 'start_game' message.");
+                                state.ws.send(JSON.stringify({ type: 'start_game' }));
+                            }
+                        });
+                    }
+                }
+
+                // Lobby Chat
+                const lobbyChatInput = document.getElementById('lobbyMsg');
+                const lobbySendButton = document.getElementById('lobbySend');
+                if(lobbySendButton) {
+                    lobbySendButton.addEventListener('click', () => {
+                        console.log("Lobby chat send button clicked.");
+                        if (lobbyChatInput && lobbyChatInput.value.trim()) {
+                            sendChatMessage(lobbyChatInput.value);
+                            lobbyChatInput.value = '';
+                        }
+                    });
+                }
+                if(lobbyChatInput) {
+                    lobbyChatInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            lobbySendButton?.click();
+                        }
+                    });
+                }
+                break;
+
+            case 'game':
+                // In-game chat
+                const chatInput = document.getElementById('chatInput');
+                const chatSendButton = document.getElementById('chatSend');
+                 if(chatSendButton) {
+                    chatSendButton.addEventListener('click', () => {
+                        console.log("In-game chat send button clicked.");
+                        if (chatInput && chatInput.value.trim()) {
+                            sendChatMessage(chatInput.value);
+                            chatInput.value = '';
+                        }
+                    });
+                }
+                if(chatInput) {
+                    chatInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            chatSendButton?.click();
+                        }
+                    });
+                }
+
+                // Game Actions
+                const gameInput = document.getElementById('gameInput');
+                const gameSendButton = document.getElementById('gameSend');
+                if(gameSendButton) {
+                    gameSendButton.addEventListener('click', () => {
+                        if (gameInput && gameInput.value) {
+                            sendAction(gameInput.value);
+                            gameInput.value = '';
+                        }
+                    });
+                }
+                if(gameInput) {
+                     gameInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            gameSendButton?.click();
+                        }
+                    });
+                }
+                break;
         }
-      });
-      on('toProfile','click',()=>go('profile'));
-      on('toTutorial','click',()=>go('tutorial'));
-      on('toSettings','click',()=>go('settings'));
-      on('doLogout','click',handleLogout);
-
-      // Назад
-      on('back','click',()=>go('landing'));
-
-      // Login/Register
-      const lf=qs('#loginForm'); if(lf) lf.addEventListener('submit',e=>{e.preventDefault(); handleLogin(lf);});
-      const rf=qs('#registerForm'); if(rf) rf.addEventListener('submit',e=>{e.preventDefault(); handleRegister(rf);});
-      on('goRegister','click',()=>go('register'));
-      on('goLogin','click',()=>go('login'));
-
-      // New Game
-      const ngf = qs('#newGameForm');
-      if(ngf) ngf.addEventListener('submit', e => { e.preventDefault(); handleStartCampaign(ngf); });
-
-      // Saved campaigns
-      on('toNewGame','click',()=>go('new-game'));
-      document.querySelectorAll('[data-campaign-id-continue]').forEach(button => {
-          button.addEventListener('click', () => {
-              const campaignId = button.dataset.campaignIdContinue;
-              handleContinueGame(campaignId);
-          });
-      });
-      document.querySelectorAll('[data-campaign-id-delete]').forEach(button => {
-          button.addEventListener('click', () => {
-              if (confirm('Are you sure you want to delete this campaign? This cannot be undone.')) {
-                  const campaignId = button.dataset.campaignIdDelete;
-                  handleDeleteGame(campaignId);
-              }
-          });
-      });
-
-      // Join room
-      const rc=qs('#roomCode');
-      on('joinByCode','click',()=> rc && rc.value.trim() && handleJoinRoom(rc.value.trim().toUpperCase()));
-
-      // Lobby
-      on('toggleReady', 'click', () => {
-          if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-              state.ws.send(JSON.stringify({ type: 'player_ready' }));
-          } else {
-              console.error("WebSocket not connected, cannot toggle ready state.");
-          }
-      });
-
-      on('leave','click',handleLogout);
-
-      const startBtn=qs('#startGame');
-      if (startBtn) {
-          const room = state.currentRoom;
-          const isHost = room?.host_user_code === state.user?.user_code;
-          // Defensive check for ready_players to handle old room data
-          const allReady = room && room.players.length > 0 && room.ready_players && room.players.length === room.ready_players.length;
-
-          if (isHost && allReady) {
-              startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-              startBtn.addEventListener('click', () => {
-                  if(state.ws) state.ws.send(JSON.stringify({ type: 'start_game' }));
-              });
-          } else {
-              startBtn.classList.add('opacity-50', 'cursor-not-allowed');
-          }
-      }
-
-      // Lobby Chat
-      const lobbyChatInput = qs('#lobbyMsg');
-      const lobbySendButton = qs('#lobbySend');
-
-      if (lobbySendButton) {
-          lobbySendButton.addEventListener('click', () => {
-              if (lobbyChatInput && lobbyChatInput.value.trim()) {
-                  sendChatMessage(lobbyChatInput.value);
-                  lobbyChatInput.value = '';
-              }
-          });
-      }
-      if (lobbyChatInput) {
-          lobbyChatInput.addEventListener('keydown', (e) => {
-              if (e.key === 'Enter') {
-                  e.preventDefault();
-                  lobbySendButton?.click();
-              }
-          });
-      }
-
-      // Game
-      on('backToLobby','click',()=>go('lobby'));
-      on('toggleMute','click',()=>{ state.isMuted=!state.isMuted; render(); });
-      on('toggleMic','click',()=>{ state.isMicrophoneActive=!state.isMicrophoneActive; render(); });
-      on('openSettings','click',()=>openSettingsModal());
-
-      // Game Actions
-      const gi=qs('#gameInput');
-      on('gameSend','click',()=>{ if(gi){ sendAction(gi.value); gi.value=''; }});
-      if(gi) gi.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); qs('#gameSend')?.click(); }});
-
-      on('takeItemBtn', 'click', async () => {
-        const lastMessage = state.sceneHistory[state.sceneHistory.length - 1];
-        const itemFound = lastMessage?.meta?.item_found;
-        if (!itemFound) return;
-
-        try {
-            const response = await fetch(`/api/rooms/${state.currentRoom.room_code}/inventory/add`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_code: state.user.user_code,
-                    item: itemFound,
-                })
-            });
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Failed to take item');
-            }
-            // The websocket message will trigger a re-render, but to prevent
-            // the user from clicking again, we can hide it immediately.
-            lastMessage.meta.item_found = null;
-            render();
-
-        } catch (error) {
-            console.error('Error taking item:', error);
-            // Optionally, show an error to the user
-            alert(`Error: ${error.message}`);
-        }
-      });
-
-      document.querySelectorAll('[data-quick]').forEach(b=>{
-        b.addEventListener('click',()=>{
-          const label=b.getAttribute('data-quick'); const input=qs('#gameInput');
-          if(input){ input.value = (label==='Бросить куб') ? 'd20' : label+': '; input.focus(); }
-          if(label==='Бросить куб') openDiceModal();
-        });
-      });
-
-      // Use item
-      document.querySelectorAll('.btn-use-item').forEach(button => {
-        button.addEventListener('click', (e) => {
-            const itemId = e.currentTarget.dataset.itemId;
-            if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                state.ws.send(JSON.stringify({ type: 'use_item', itemId: itemId }));
-            }
-        });
-      });
-
-      // In-game chat
-      on('chatSend', 'click', () => {
-          const inp = qs('#chatInput');
-          if (inp && inp.value.trim()) {
-              sendChatMessage(inp.value);
-              inp.value = '';
-          }
-      });
-      const chatInp = qs('#chatInput');
-      if (chatInp) chatInp.addEventListener('keydown', e => {
-          if (e.key === 'Enter') {
-              e.preventDefault();
-              qs('#chatSend')?.click();
-          }
-      });
-
-      // Settings
-      function saveSettings() {
-        storage.saveSettings({
-          theme: state.theme,
-          language: state.language,
-          customTheme: state.customTheme,
-        });
-      }
-
-      themePresets().forEach((p,i)=>{
-        document.querySelectorAll(`[data-preset="${i}"]`).forEach(el=>{
-          el.addEventListener('click',()=>{
-            state.theme = p.name.toLowerCase().includes('light') ? 'light' : 'dark';
-            state.customTheme={primary:p.primary,secondary:p.secondary,background:p.background};
-            saveSettings();
-            render();
-          });
-        });
-      });
-      on('cPrimary','input',e=>{ state.customTheme.primary=e.target.value; applyTheme(); saveSettings(); });
-      on('cSecondary','input',e=>{ state.customTheme.secondary=e.target.value; applyTheme(); saveSettings(); });
-      on('cBackground','input',e=>{ state.customTheme.background=e.target.value; applyTheme(); saveSettings(); });
-      document.querySelectorAll('input[name="language"]').forEach(r=>{
-        r.addEventListener('change',e=>{
-          state.language=e.target.value;
-          saveSettings();
-          render();
-        });
-      });
-
-      // Tutorial
-      on('tutorialStart','click',()=>go('landing'));
-
-      // Profile
-      on('changeUsernameBtn', 'click', handleChangeUsername);
-      on('changeAvatarBtn', 'click', handleChangeAvatar);
+        console.log("--- RENDER END ---");
     }
 
     async function handleChangeAvatar() {
