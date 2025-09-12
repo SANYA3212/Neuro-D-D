@@ -1,4 +1,29 @@
 {
-  "users": {},
+  "users": {
+    "testuser_6913@example.com": {
+      "user_code": "6b50300e-62b5-413b-b397-e519a5d55172",
+      "username": "TestUser9160"
+    },
+    "testuser_1509@example.com": {
+      "user_code": "0935338c-07aa-4467-aa41-ef0babc476e8",
+      "username": "TestUser3109"
+    },
+    "testuser_7750@example.com": {
+      "user_code": "03ac3d8a-a2cf-4314-b4f5-c93b094b2e92",
+      "username": "TestUser4757"
+    },
+    "testuser_5877@example.com": {
+      "user_code": "59c598c2-37df-43b3-a0ee-619f6dffcec0",
+      "username": "TestUser7918"
+    },
+    "testuser_3989@example.com": {
+      "user_code": "0a2d6bce-18e9-4a8f-848d-2d0e3dc6dfb0",
+      "username": "TestUser5783"
+    },
+    "testuser_9889@example.com": {
+      "user_code": "9f903b9c-7375-4fe5-bc41-5a5f4d8a6852",
+      "username": "TestUser9543"
+    }
+  },
   "campaigns": {}
 }

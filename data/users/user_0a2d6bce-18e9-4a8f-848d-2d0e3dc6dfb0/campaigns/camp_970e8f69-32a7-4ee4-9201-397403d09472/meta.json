@@ -1,0 +1,17 @@
+{
+  "id": "970e8f69-32a7-4ee4-9201-397403d09472",
+  "name": "Test Campaign for Automated Script",
+  "tone": "epic_fantasy",
+  "difficulty": "medium",
+  "host_user_code": "0a2d6bce-18e9-4a8f-848d-2d0e3dc6dfb0",
+  "players": [],
+  "player_states": {
+    "9f903b9c-7375-4fe5-bc41-5a5f4d8a6852": {
+      "hp": 20,
+      "max_hp": 20,
+      "inventory": []
+    }
+  },
+  "status": "active",
+  "created_at": "2025-09-07 18:23:34.977292"
+}

@@ -110,6 +110,16 @@ def add_user_to_index(user_profile: UserProfile):
 
 # --- Campaign Management ---
 
+def get_campaign_meta(user_code: str, campaign_id: str) -> Optional['CampaignMeta']:
+    """Reads a campaign's meta.json file and returns a CampaignMeta object."""
+    from .models import CampaignMeta # Late import to avoid circular dependency
+    meta_path = get_campaign_meta_file(user_code, campaign_id)
+    if meta_path:
+        meta_data = read_json(meta_path)
+        if meta_data:
+            return CampaignMeta(**meta_data)
+    return None
+
 def get_campaign_dir(user_code: str, campaign_id: str) -> Optional[Path]:
     """Gets the full path to a specific campaign directory."""
     try:
