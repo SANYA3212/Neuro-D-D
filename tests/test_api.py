@@ -95,10 +95,13 @@ async def run_tests():
     log_step("All Tests Completed")
 
 async def test_websocket_flow():
-    """Tests the full WebSocket lobby flow."""
+    """Tests the full WebSocket lobby flow with delta updates."""
     log_step("Testing WebSocket Flow")
 
-    # 1. User 2 joins the room
+    # Store the local state for each client
+    client_state = {"user1": None, "user2": None}
+
+    # 1. User 2 joins the room via HTTP first
     headers = {"X-User-Code": user_2_code}
     payload = {"room_code": room_code}
     response = requests.post(f"{BASE_URL}/api/rooms/join", json=payload, headers=headers)
@@ -113,73 +116,89 @@ async def test_websocket_flow():
     async with websockets.connect(uri1) as ws1, websockets.connect(uri2) as ws2:
         log_success("Both users connected to WebSocket.")
 
-        # 2. Verify initial state broadcast
-        msg1 = await ws1.recv()
-        msg2 = await ws2.recv()
-        state1 = json.loads(msg1)
-        state2 = json.loads(msg2)
-
-        if len(state1['players']) == 2 and len(state2['players']) == 2:
-            log_success("Initial state broadcast received by both users with 2 players.")
+        # 2. Verify initial state for both clients
+        # User 1 (host) gets their welcome package
+        msg1_initial = json.loads(await ws1.recv())
+        client_state["user1"] = msg1_initial
+        if len(client_state["user1"]['players']) == 2:
+             log_success("User 1 received initial state with 2 players.")
         else:
-            log_error(f"Initial state incorrect. User1 players: {len(state1['players'])}, User2 players: {len(state2['players'])}")
+            log_error(f"User 1 initial state incorrect. Players: {len(client_state['user1']['players'])}")
+            return
+
+        # User 2 gets their welcome package
+        msg2_initial = json.loads(await ws2.recv())
+        client_state["user2"] = msg2_initial
+        if len(client_state["user2"]['players']) == 2:
+             log_success("User 2 received initial state with 2 players.")
+        else:
+            log_error(f"User 2 initial state incorrect. Players: {len(client_state['user2']['players'])}")
+            return
+
+        # User 1 receives the 'player_joined' delta for User 2
+        log_step("User 1 receives join notification for User 2")
+        join_delta = json.loads(await ws1.recv())
+        if join_delta['type'] == 'player_joined' and join_delta['player']['user_code'] == user_2_code:
+            log_success("User 1 correctly received the 'player_joined' delta.")
+        else:
+            log_error(f"User 1 received incorrect join delta: {join_delta}")
             return
 
         # 3. User 2 gets ready
         log_step("User 2 sends 'player_ready'")
         await ws2.send(json.dumps({"type": "player_ready"}))
 
-        msg1 = await ws1.recv()
-        msg2 = await ws2.recv()
-        state1 = json.loads(msg1)
+        # Both clients should receive a 'player_ready_changed' delta
+        delta1 = json.loads(await ws1.recv())
+        delta2 = json.loads(await ws2.recv())
 
-        if user_2_code in state1['ready_players']:
-            log_success("User 1 received update with User 2 ready.")
+        if delta1['type'] == 'player_ready_changed' and delta1['user_code'] == user_2_code and delta1['is_ready']:
+            log_success("User 1 received correct 'player_ready_changed' delta for User 2.")
         else:
-            log_error("User 1 did not see User 2 as ready.")
+            log_error(f"User 1 received incorrect delta for User 2 ready: {delta1}")
             return
 
         # 4. User 1 gets ready
         log_step("User 1 sends 'player_ready'")
         await ws1.send(json.dumps({"type": "player_ready"}))
 
-        msg1 = await ws1.recv()
-        msg2 = await ws2.recv()
-        state2 = json.loads(msg2)
+        # Both clients should receive another 'player_ready_changed' delta
+        delta1 = json.loads(await ws1.recv())
+        delta2 = json.loads(await ws2.recv())
 
-        if len(state2['ready_players']) == 2:
-            log_success("User 2 received update with both players ready.")
+        if delta2['type'] == 'player_ready_changed' and delta2['user_code'] == user_1_code and delta2['is_ready']:
+            log_success("User 2 received correct 'player_ready_changed' delta for User 1.")
         else:
-            log_error(f"User 2 did not see both players as ready. Ready count: {len(state2['ready_players'])}")
+            log_error(f"User 2 received incorrect delta for User 1 ready: {delta2}")
             return
 
         # 5. User 1 sends a chat message
         log_step("User 1 sends a chat message")
-        chat_text = "Hello from the test script!"
+        chat_text = "Hello from the updated test script!"
         await ws1.send(json.dumps({"type": "chat", "text": chat_text}))
 
-        msg1 = await ws1.recv()
-        msg2 = await ws2.recv()
-        chat_msg = json.loads(msg2)
+        # Both clients receive the 'new_message' delta
+        delta1 = json.loads(await ws1.recv())
+        delta2 = json.loads(await ws2.recv())
 
-        if chat_msg['type'] == 'new_message' and chat_msg['text'] == chat_text:
-            log_success("User 2 received the chat message correctly.")
+        if delta2['type'] == 'new_message' and delta2['text'] == chat_text and delta2['sender'] == USER_1['username']:
+            log_success("User 2 received the chat message delta correctly.")
         else:
-            log_error(f"User 2 did not receive chat message correctly. Received: {chat_msg}")
+            log_error(f"User 2 did not receive chat message correctly. Received: {delta2}")
             return
 
         # 6. Host (User 1) starts the game
         log_step("Host sends 'start_game'")
         await ws1.send(json.dumps({"type": "start_game"}))
 
-        msg1 = await ws1.recv()
-        msg2 = await ws2.recv()
-        start_msg = json.loads(msg2)
+        # Both clients should receive the 'game_starting' delta
+        delta1 = json.loads(await ws1.recv())
+        delta2 = json.loads(await ws2.recv())
 
-        if start_msg['type'] == 'game_starting':
+        if delta2['type'] == 'game_starting':
             log_success("User 2 received 'game_starting' message.")
         else:
-            log_error(f"User 2 did not receive 'game_starting' message. Received: {start_msg}")
+            log_error(f"User 2 did not receive 'game_starting' message. Received: {delta2}")
             return
 
 if __name__ == "__main__":

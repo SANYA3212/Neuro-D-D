@@ -108,6 +108,7 @@
       createRoom: (isPublic, name) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name } }),
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
+      createRoom: (isPublic, name, campaignId = null) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name, campaign_id: campaignId } }),
       createCampaign: (name, tone, difficulty) => api.fetchJSON('/campaigns', { method: 'POST', body: { name, tone, difficulty } }),
       getCampaignDetails: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`),
       deleteCampaign: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`, { method: 'DELETE' }),
@@ -220,27 +221,55 @@
 
         state.ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
+            console.log("WS a reçu:", message);
 
-            if (message.type === "new_message") {
-                state.chatMessages.push({
-                    id: message.id,
-                    text: message.text,
-                    sender: message.sender,
-                    timestamp: new Date(message.timestamp).toLocaleTimeString()
-                });
-                if (state.currentPage === 'lobby' || state.currentPage === 'game') render();
-
-            } else if (message.type === "game_starting") {
-                go('game');
-            } else if (message.room_code) { // This is a full room_update
+            // Initial state on join vs. delta updates
+            if (message.room_code && message.players) { // This is the initial "welcome" state
                 state.currentRoom = message;
                 state.sceneHistory = message.journal?.entries || [];
                 state.chatMessages = processJournal(message.journal, message.players);
-                if (state.currentPage === 'lobby' || state.currentPage === 'game') {
-                    render();
-                }
             } else {
-                console.log("Received unhandled WS message:", message);
+                // These are delta updates
+                switch (message.type) {
+                    case 'player_joined':
+                        if (state.currentRoom && !state.currentRoom.players.some(p => p.user_code === message.player.user_code)) {
+                            state.currentRoom.players.push(message.player);
+                        }
+                        break;
+                    case 'player_left':
+                        if (state.currentRoom) {
+                            state.currentRoom.players = state.currentRoom.players.filter(p => p.user_code !== message.user_code);
+                            state.currentRoom.ready_players = state.currentRoom.ready_players.filter(uc => uc !== message.user_code);
+                        }
+                        break;
+                    case 'player_ready_changed':
+                        if (state.currentRoom) {
+                            if (message.is_ready) {
+                                if (!state.currentRoom.ready_players.includes(message.user_code)) {
+                                    state.currentRoom.ready_players.push(message.user_code);
+                                }
+                            } else {
+                                state.currentRoom.ready_players = state.currentRoom.ready_players.filter(uc => uc !== message.user_code);
+                            }
+                        }
+                        break;
+                    case 'new_message':
+                         state.chatMessages.push({
+                            id: message.id, text: message.text, sender: message.sender,
+                            timestamp: new Date(message.timestamp).toLocaleTimeString()
+                        });
+                        break;
+                    case 'game_starting':
+                        go('game');
+                        break;
+                    default:
+                        console.log("Received unhandled WS delta message:", message);
+                }
+            }
+
+            // Re-render on any update
+            if (state.currentPage === 'lobby' || state.currentPage === 'game') {
+                render();
             }
         };
 
@@ -1023,6 +1052,28 @@
                         handleJoinRoom(roomCodeInput.value.trim().toUpperCase());
                     }
                 });
+                break;
+
+            case 'saved-campaigns':
+                document.querySelectorAll('[data-campaign-id-continue]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const campaignId = e.currentTarget.dataset.campaignIdContinue;
+                        if (campaignId) {
+                            handleContinueGame(campaignId);
+                        }
+                    });
+                });
+                document.querySelectorAll('[data-campaign-id-delete]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const campaignId = e.currentTarget.dataset.campaignIdDelete;
+                        if (campaignId) {
+                            if (confirm('Are you sure you want to delete this campaign? This cannot be undone.')) {
+                                handleDeleteGame(campaignId);
+                            }
+                        }
+                    });
+                });
+                addListener('toNewGame', 'click', () => go('new-game'));
                 break;
 
             case 'lobby':

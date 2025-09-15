@@ -20,6 +20,7 @@ class UserSettings(BaseModel):
     # other settings can be added here
 
 class Message(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
     role: str # 'user', 'assistant', or 'system'
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)

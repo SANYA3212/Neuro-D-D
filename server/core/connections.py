@@ -23,13 +23,18 @@ class ConnectionManager:
             if not self.active_connections[room_code]:
                 del self.active_connections[room_code]
 
-    async def broadcast(self, message: dict, room_code: str):
+    async def broadcast(self, message: dict, room_code: str, exclude: List[WebSocket] = None):
         """Broadcasts a JSON message to all clients in a specific room."""
         if room_code in self.active_connections:
             # Use jsonable_encoder to handle complex types like datetime
             encoded_message = json.dumps(jsonable_encoder(message))
+            print(f"Broadcasting to room {room_code}: {encoded_message}") # DEBUG LOGGING
+            if exclude is None:
+                exclude = []
+
             for connection in self.active_connections[room_code]:
-                await connection.send_text(encoded_message)
+                if connection not in exclude:
+                    await connection.send_text(encoded_message)
 
 # Create a single, shared instance of the manager
 manager = ConnectionManager()
