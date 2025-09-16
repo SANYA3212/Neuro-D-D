@@ -228,6 +228,13 @@
                 state.currentRoom = message;
                 state.sceneHistory = message.journal?.entries || [];
                 state.chatMessages = processJournal(message.journal, message.players);
+
+                // Also sync campaign state if joining a game in progress
+                if (message.campaign_id) {
+                    api.getCampaignDetails(message.campaign_id)
+                        .then(syncCampaignState)
+                        .catch(err => console.error("Failed to re-sync campaign state on join:", err));
+                }
             } else {
                 // These are delta updates
                 switch (message.type) {
@@ -331,6 +338,12 @@
         await api.joinRoom(roomId);
         const roomDetails = await api.getRoomDetails(roomId);
         state.currentRoom = roomDetails;
+
+        if (roomDetails.campaign_id) {
+            const campaignDetails = await api.getCampaignDetails(roomDetails.campaign_id);
+            syncCampaignState(campaignDetails);
+        }
+
         storage.saveCurrentRoomCode(roomDetails.room_code);
         go('lobby');
       } catch (error) {
@@ -338,12 +351,16 @@
       }
     }
 
+    function syncCampaignState(campaignDetails) {
+        state.currentCampaign = campaignDetails.meta;
+        state.sceneHistory = campaignDetails.journal.entries;
+        // We only sync the game journal here. Lobby chat is handled by WS messages.
+    }
+
     async function handleContinueGame(campaignId) {
       try {
         const campaignDetails = await api.getCampaignDetails(campaignId);
-        state.currentCampaign = campaignDetails.meta;
-        state.sceneHistory = campaignDetails.journal.entries;
-        state.chatMessages = processJournal(campaignDetails.journal, []); // Players will be loaded in the new room
+        syncCampaignState(campaignDetails);
 
         // Create a new room for this continued session
         const newRoom = await api.createRoom(true, campaignDetails.meta.name, campaignDetails.meta.id);
