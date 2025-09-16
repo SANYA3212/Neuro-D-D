@@ -75,6 +75,7 @@
     const api = {
       BASE_URL: '/api',
       async fetchJSON(path, options = {}) {
+        console.log(`%cAPI CALL: ${options.method || 'GET'} ${path}`, 'color: #fb923c', options.body ? JSON.parse(options.body) : '');
         const url = this.BASE_URL + path;
         const headers = { ...options.headers };
         const userCode = storage.getUserCode();
@@ -89,12 +90,18 @@
           const response = await fetch(url, { ...options, headers });
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+            console.error(`API Error on ${path}: Status ${response.status}`, errorData);
             throw new Error(errorData.detail || 'Unknown server error');
           }
-          if (response.status === 204) return null;
-          return response.json();
+          if (response.status === 204) {
+            console.log(`%cAPI RESPONSE for ${path}: 204 No Content`, 'color: #22c55e');
+            return null;
+          }
+          const responseData = await response.json();
+          console.log(`%cAPI RESPONSE for ${path}:`, 'color: #22c55e', responseData);
+          return responseData;
         } catch (error) {
-          console.error(`API Error on ${path}:`, error);
+          console.error(`%cAPI FATAL on ${path}:`, 'color: #ef4444', error);
           throw error;
         }
       },
@@ -186,8 +193,10 @@
 
     // ====== Навигация ======
     function go(page){
+      console.log(`%cNAVIGATING: from '${state.currentPage}' to '${page}'`, 'color: #88aaff; font-weight: bold;');
       // If we are leaving the lobby or game, disconnect the websocket
       if ((state.currentPage === 'lobby' || state.currentPage === 'game') && (page !== 'lobby' && page !== 'game')) {
+        console.log("Leaving a game page, disconnecting WebSocket and clearing room code.");
         disconnectWebSocket();
         storage.clearCurrentRoomCode();
       }
@@ -197,6 +206,7 @@
 
       // If we have entered the lobby, connect the websocket
       if (page === 'lobby') {
+        console.log("Entered lobby, attempting to connect WebSocket.");
         connectWebSocket();
       }
     }
@@ -225,15 +235,15 @@
 
             // Initial state on join vs. delta updates
             if (message.room_code && message.players) { // This is the initial "welcome" state
+                console.log("Received 'welcome' state from WebSocket.");
                 state.currentRoom = message;
                 state.sceneHistory = message.journal?.entries || [];
                 state.chatMessages = processJournal(message.journal, message.players);
 
                 // Also sync campaign state if joining a game in progress
-                if (message.campaign_id) {
-                    api.getCampaignDetails(message.campaign_id)
-                        .then(syncCampaignState)
-                        .catch(err => console.error("Failed to re-sync campaign state on join:", err));
+                if (message.campaign_meta) {
+                    console.log("Welcome state has campaign meta, syncing state directly.");
+                    syncCampaignState({ meta: message.campaign_meta, journal: message.journal });
                 }
             } else {
                 // These are delta updates
@@ -333,15 +343,23 @@
         go('new-game');
     }
     async function handleJoinRoom(roomId){
-      if (!state.user) return go('login');
+      console.log(`handleJoinRoom called with roomId: ${roomId}`);
+      if (!state.user) {
+        console.log("No user found, redirecting to login.");
+        return go('login');
+      }
       try {
         await api.joinRoom(roomId);
         const roomDetails = await api.getRoomDetails(roomId);
         state.currentRoom = roomDetails;
+        console.log("Joined room and got details:", roomDetails);
 
-        if (roomDetails.campaign_id) {
-            const campaignDetails = await api.getCampaignDetails(roomDetails.campaign_id);
-            syncCampaignState(campaignDetails);
+        if (roomDetails.campaign_meta) {
+            console.log("Room has campaign meta, syncing state directly.");
+            // The campaign details are now embedded in the room details
+            syncCampaignState({ meta: roomDetails.campaign_meta, journal: roomDetails.journal });
+        } else {
+            console.log("Room has no associated campaign.");
         }
 
         storage.saveCurrentRoomCode(roomDetails.room_code);
@@ -352,8 +370,15 @@
     }
 
     function syncCampaignState(campaignDetails) {
+        console.log("%cSYNCING CAMPAIGN STATE", "color: #a78bfa; font-weight: bold;", campaignDetails);
+        if (!campaignDetails || !campaignDetails.meta) {
+            console.error("syncCampaignState failed: campaignDetails or meta is missing.", campaignDetails);
+            return;
+        }
         state.currentCampaign = campaignDetails.meta;
+        console.log("  - Set state.currentCampaign:", state.currentCampaign);
         state.sceneHistory = campaignDetails.journal.entries;
+        console.log("  - Set state.sceneHistory with entry count:", state.sceneHistory.length);
         // We only sync the game journal here. Lobby chat is handled by WS messages.
     }
 

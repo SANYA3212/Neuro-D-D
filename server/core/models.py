@@ -128,6 +128,7 @@ class RoomDetailsResponse(BaseModel):
     players: List[PlayerInfo] = Field(default_factory=list)
     ready_players: List[str] = Field(default_factory=list)
     campaign_id: Optional[str] = None
+    campaign_meta: Optional[CampaignMeta] = None
     created_at: datetime
     journal: Optional[CampaignJournal] = None # Include the journal for state restoration
 
