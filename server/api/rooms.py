@@ -118,20 +118,34 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
         room_data = next((r for r in all_rooms if r['room_code'] == room_code), None)
         if room_data:
             room = Room(**room_data)
+            hp = 100
+            max_hp = 100
+            energy = 100
+            max_energy = 100
+            inventory = []
+
+            # If a campaign is running, get the real stats
+            if room.campaign_id:
+                meta = storage.get_campaign_meta(room.host_user_code, room.campaign_id)
+                if meta and user_code in meta.player_states:
+                    player_state = meta.player_states[user_code]
+                    hp = player_state.hp
+                    max_hp = player_state.max_hp
+                    energy = player_state.energy
+                    max_energy = player_state.max_energy
+                    inventory = player_state.inventory
+
             player_info = PlayerInfo(
                 user_code=profile.user_code,
                 username=profile.username,
                 avatar_url=profile.avatar_url,
                 is_host=(profile.user_code == room.host_user_code),
-                hp=100, # Default, will be updated if campaign exists
-                max_hp=100
+                hp=hp,
+                max_hp=max_hp,
+                energy=energy,
+                max_energy=max_energy,
+                inventory=inventory
             )
-            # If a campaign is running, get the real HP
-            if room.campaign_id:
-                meta = storage.get_campaign_meta(room.host_user_code, room.campaign_id)
-                if meta and user_code in meta.player_states:
-                    player_info.hp = meta.player_states[user_code].hp
-                    player_info.max_hp = meta.player_states[user_code].max_hp
 
             join_message = {"type": "player_joined", "player": jsonable_encoder(player_info)}
             await manager.broadcast(join_message, room_code, exclude=[websocket])

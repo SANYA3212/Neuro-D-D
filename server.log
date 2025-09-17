@@ -1,0 +1,25 @@
+INFO:     Started server process [12869]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-17 17:23:09,165 - api.request - INFO - --> POST /api/auth/register [user:anonymous, ip:127.0.0.1]
+2025-09-17 17:23:09,170 - api.request - INFO - <-- 200 for /api/auth/register (took 4.90ms)
+INFO:     127.0.0.1:47500 - "POST /api/auth/register HTTP/1.1" 200 OK
+2025-09-17 17:23:09,675 - api.request - INFO - --> POST /api/auth/register [user:anonymous, ip:127.0.0.1]
+2025-09-17 17:23:09,679 - api.request - INFO - <-- 200 for /api/auth/register (took 3.53ms)
+INFO:     127.0.0.1:47510 - "POST /api/auth/register HTTP/1.1" 200 OK
+2025-09-17 17:23:10,184 - api.request - INFO - --> POST /api/campaigns [user:c6e8c1c9-5d8f-445a-8ae0-d8f22a0bccc8, ip:127.0.0.1]
+2025-09-17 17:23:10,188 - api.request - INFO - <-- 200 for /api/campaigns (took 4.17ms)
+INFO:     127.0.0.1:47524 - "POST /api/campaigns HTTP/1.1" 200 OK
+2025-09-17 17:23:10,192 - api.request - INFO - --> POST /api/rooms [user:c6e8c1c9-5d8f-445a-8ae0-d8f22a0bccc8, ip:127.0.0.1]
+2025-09-17 17:23:10,198 - api.request - INFO - <-- 200 for /api/rooms (took 5.76ms)
+INFO:     127.0.0.1:47532 - "POST /api/rooms HTTP/1.1" 200 OK
+2025-09-17 17:23:10,202 - api.request - INFO - --> POST /api/rooms/join [user:88307716-3080-42e6-8c63-abbb47e6969d, ip:127.0.0.1]
+2025-09-17 17:23:10,205 - api.request - INFO - <-- 200 for /api/rooms/join (took 3.60ms)
+INFO:     127.0.0.1:47544 - "POST /api/rooms/join HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47548 - "WebSocket /api/rooms/ws/W79K/c6e8c1c9-5d8f-445a-8ae0-d8f22a0bccc8" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:47552 - "WebSocket /api/rooms/ws/W79K/88307716-3080-42e6-8c63-abbb47e6969d" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed

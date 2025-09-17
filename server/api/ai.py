@@ -142,7 +142,46 @@ async def get_ai_completion(
             print(f"WARNING: Could not find journal to save AI response for campaign {campaign_meta.id}")
 
 
-        if meta:
+        if meta and meta.get("game_events") and isinstance(meta.get("game_events"), list):
+            player_state = campaign_meta.player_states.get(user_code)
+            if player_state:
+                for event in meta["game_events"]:
+                    event_type = event.get("type")
+
+                    if event_type == "hp_change":
+                        value = event.get("value", 0)
+                        if isinstance(value, int):
+                            player_state.hp = max(0, min(player_state.max_hp, player_state.hp + value))
+                            state_changed = True
+
+                    elif event_type == "energy_change":
+                        value = event.get("value", 0)
+                        if isinstance(value, int):
+                            player_state.energy = max(0, min(player_state.max_energy, player_state.energy + value))
+                            state_changed = True
+
+                    elif event_type == "item_add":
+                        item_data = event.get("item")
+                        if isinstance(item_data, dict):
+                            if not any(item.name == item_data.get("name") for item in player_state.inventory):
+                                new_item = GameItem(**item_data)
+                                player_state.inventory.append(new_item)
+                                state_changed = True
+
+                    elif event_type == "item_used":
+                        item_name = event.get("item_name")
+                        if item_name:
+                            for item in player_state.inventory:
+                                if item.name == item_name and item.uses is not None:
+                                    item.uses = max(0, item.uses - 1)
+                                    # Optional: Remove item if uses are depleted
+                                    # if item.uses == 0:
+                                    #     player_state.inventory.remove(item)
+                                    state_changed = True
+                                    break # Stop after finding and using the item
+
+        # Fallback for old metadata format for safety, can be removed later
+        elif meta:
             # Handle HP changes
             hp_change = meta.get("hp_change")
             if isinstance(hp_change, int):
@@ -156,7 +195,6 @@ async def get_ai_completion(
             if isinstance(item_data, dict):
                 player_state = campaign_meta.player_states.get(user_code)
                 if player_state:
-                    # Make sure we don't add duplicate items if the AI makes a mistake
                     if not any(item.name == item_data.get("name") for item in player_state.inventory):
                         new_item = GameItem(**item_data)
                         player_state.inventory.append(new_item)

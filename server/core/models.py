@@ -37,6 +37,8 @@ class PlayerState(BaseModel):
     """Represents the state of a player within a campaign (e.g., HP, status effects)."""
     hp: int = 20
     max_hp: int = 20
+    energy: int = 100
+    max_energy: int = 100
     inventory: List[GameItem] = Field(default_factory=list)
 
 class CampaignMeta(BaseModel):
@@ -85,6 +87,8 @@ class PlayerInfo(BaseModel):
     is_host: bool = False
     hp: int
     max_hp: int
+    energy: int
+    max_energy: int
     inventory: List[GameItem] = Field(default_factory=list)
 
 # Auth

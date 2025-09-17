@@ -48,6 +48,8 @@ async def get_room_details_logic(room_code: str) -> Optional[RoomDetailsResponse
 
         hp = 20
         max_hp = 20
+        energy = 100
+        max_energy = 100
         inventory = []
 
         # Get player-specific state only if a campaign exists
@@ -56,6 +58,8 @@ async def get_room_details_logic(room_code: str) -> Optional[RoomDetailsResponse
             if player_state:
                 hp = player_state.hp
                 max_hp = player_state.max_hp
+                energy = player_state.energy
+                max_energy = player_state.max_energy
                 inventory = player_state.inventory
 
         player_profiles.append(
@@ -66,6 +70,8 @@ async def get_room_details_logic(room_code: str) -> Optional[RoomDetailsResponse
                 is_host=(profile.user_code == room.host_user_code),
                 hp=hp,
                 max_hp=max_hp,
+                energy=energy,
+                max_energy=max_energy,
                 inventory=inventory
             )
         )
