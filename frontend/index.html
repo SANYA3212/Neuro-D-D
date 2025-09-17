@@ -74,17 +74,8 @@
 
     const api = {
       BASE_URL: '/api',
-      logToServer: (level, message, context = {}) => {
-        // Fire and forget
-        api.fetchJSON('/system/log', { method: 'POST', body: { level, message, context } }).catch(err => {
-          console.error("Failed to log to server:", err); // Avoid a loop if logging fails
-        });
-      },
       async fetchJSON(path, options = {}) {
-        // Don't log calls to the log endpoint itself
-        if (path !== '/system/log') {
-            console.log(`%cAPI CALL: ${options.method || 'GET'} ${path}`, 'color: #fb923c', options.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : '');
-        }
+        console.log(`%cAPI CALL: ${options.method || 'GET'} ${path}`, 'color: #fb923c', options.body ? JSON.parse(options.body) : '');
         const url = this.BASE_URL + path;
         const headers = { ...options.headers };
         const userCode = storage.getUserCode();
@@ -103,16 +94,14 @@
             throw new Error(errorData.detail || 'Unknown server error');
           }
           if (response.status === 204) {
-             if (path !== '/system/log') console.log(`%cAPI RESPONSE for ${path}: 204 No Content`, 'color: #22c55e');
+            console.log(`%cAPI RESPONSE for ${path}: 204 No Content`, 'color: #22c55e');
             return null;
           }
           const responseData = await response.json();
-          if (path !== '/system/log') console.log(`%cAPI RESPONSE for ${path}:`, 'color: #22c55e', responseData);
+          console.log(`%cAPI RESPONSE for ${path}:`, 'color: #22c55e', responseData);
           return responseData;
         } catch (error) {
           console.error(`%cAPI FATAL on ${path}:`, 'color: #ef4444', error);
-          // Log the fatal client-side error to the server
-          api.logToServer('ERROR', `Client-side API call to ${path} failed.`, { error: error.message, stack: error.stack });
           throw error;
         }
       },
@@ -204,11 +193,9 @@
 
     // ====== Навигация ======
     function go(page){
-      api.logToServer('INFO', `Navigating from '${state.currentPage}' to '${page}'`);
       console.log(`%cNAVIGATING: from '${state.currentPage}' to '${page}'`, 'color: #88aaff; font-weight: bold;');
       // If we are leaving the lobby or game, disconnect the websocket
       if ((state.currentPage === 'lobby' || state.currentPage === 'game') && (page !== 'lobby' && page !== 'game')) {
-        api.logToServer('INFO', `Leaving game page, disconnecting WebSocket.`);
         console.log("Leaving a game page, disconnecting WebSocket and clearing room code.");
         disconnectWebSocket();
         storage.clearCurrentRoomCode();
@@ -334,21 +321,18 @@
             alert('Please enter a campaign name/plot.');
             return;
         }
-        api.logToServer('INFO', `User starting new campaign`, { name, tone, difficulty });
+
         try {
             const newCampaign = await api.createCampaign(name, tone, difficulty);
             state.currentCampaign = newCampaign;
-            api.logToServer('INFO', `Created campaign ${newCampaign.id}`);
 
             // Now create a room associated with this campaign
             const newRoom = await api.createRoom(true, newCampaign.name);
             state.currentRoom = newRoom;
             storage.saveCurrentRoomCode(newRoom.room_code);
-            api.logToServer('INFO', `Created room ${newRoom.room_code} for campaign ${newCampaign.id}`);
 
             go('lobby');
         } catch (error) {
-            api.logToServer('ERROR', `Failed to start campaign`, { error: error.message });
             alert(`${t('error')}: ${error.message}`);
         }
     }
@@ -359,10 +343,8 @@
         go('new-game');
     }
     async function handleJoinRoom(roomId){
-      api.logToServer('INFO', `User attempting to join room: ${roomId}`);
       console.log(`handleJoinRoom called with roomId: ${roomId}`);
       if (!state.user) {
-        api.logToServer('WARNING', `Attempted to join room without being logged in.`);
         console.log("No user found, redirecting to login.");
         return go('login');
       }
@@ -370,7 +352,6 @@
         await api.joinRoom(roomId);
         const roomDetails = await api.getRoomDetails(roomId);
         state.currentRoom = roomDetails;
-        api.logToServer('INFO', `User successfully joined room: ${roomId}`);
         console.log("Joined room and got details:", roomDetails);
 
         if (roomDetails.campaign_meta) {
@@ -384,7 +365,6 @@
         storage.saveCurrentRoomCode(roomDetails.room_code);
         go('lobby');
       } catch (error) {
-         api.logToServer('ERROR', `Failed to join room: ${roomId}`, { error: error.message });
          alert(`${t('error')}: ${error.message}`);
       }
     }
@@ -432,15 +412,12 @@
     async function handleLogin(form){
       const email=form.email.value.trim(), password=form.password.value.trim();
       if (!email || !password) return;
-      api.logToServer('INFO', `Login attempt for email: ${email}`);
       try {
         const { user_code, profile } = await api.login(email, password);
         storage.saveUserCode(user_code);
         state.user = profile;
-        api.logToServer('INFO', `Login successful for ${email}, user_code: ${user_code}`);
         go('landing');
       } catch (error) {
-        api.logToServer('ERROR', `Login failed for email: ${email}`, { error: error.message });
         alert(`${t('error')}: ${error.message}`);
       }
     }
@@ -452,20 +429,16 @@
         alert('Please fill all fields correctly.'); // TODO: use a proper modal
         return;
       }
-      api.logToServer('INFO', `Registration attempt for email: ${email}`);
       try {
         const { user_code, profile } = await api.register(username, email, password);
         storage.saveUserCode(user_code);
         state.user = profile;
-        api.logToServer('INFO', `Registration successful for ${email}, user_code: ${user_code}`);
         go('landing');
       } catch (error) {
-        api.logToServer('ERROR', `Registration failed for email: ${email}`, { error: error.message });
         alert(`${t('error')}: ${error.message}`);
       }
     }
     function handleLogout(){
-      api.logToServer('INFO', `User ${state.user?.username} (${state.user?.user_code}) is logging out.`);
       storage.removeUserCode();
       storage.clearCurrentRoomCode();
       state.user = null;
@@ -486,8 +459,6 @@
     async function sendAction(text) {
       const action = text.trim();
       if (!action) return;
-
-      api.logToServer('INFO', `Player action`, { action });
 
       const userMessage = { role: 'user', content: action };
       // This is the master/game log, not the player chat.
@@ -516,12 +487,10 @@
         // Handle metadata
         if (aiResponse.meta) {
           console.log("AI Metadata:", aiResponse.meta);
-          api.logToServer('INFO', `AI response metadata`, { meta: aiResponse.meta });
           // TODO: Implement HP changes and other game mechanics based on meta
         }
 
       } catch (error) {
-        api.logToServer('ERROR', `Error during sendAction`, { error: error.message });
         state.chatMessages.push({ id: Date.now(), text: `Ошибка: ${error.message}`, sender: 'System', timestamp: new Date().toLocaleTimeString() });
       } finally {
         state.isRolling = false;
@@ -530,14 +499,12 @@
     }
     function sendChatMessage(text) {
         if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-            api.logToServer('ERROR', `Attempted to send chat message with no open WebSocket.`);
             console.error("WebSocket is not connected.");
             // Optionally, add a user-facing error message here
             return;
         }
         const message = text.trim();
         if (message) {
-            api.logToServer('INFO', `Player chat message`, { room: state.currentRoom?.room_code, message });
             state.ws.send(JSON.stringify({ type: 'chat', text: message }));
         }
     }
@@ -1115,60 +1082,6 @@
                 addListener('goLogin', 'click', () => go('login'));
                 break;
 
-            case 'settings':
-                const presets = themePresets();
-                document.querySelectorAll('[data-preset]').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const preset = presets[+btn.dataset.preset];
-                        if (preset) {
-                            state.customTheme = {
-                                primary: preset.primary,
-                                secondary: preset.secondary,
-                                background: preset.background,
-                            };
-                            state.theme = 'custom';
-
-                            // Update the color picker inputs to reflect the change
-                            const primaryInput = document.getElementById('cPrimary');
-                            const secondaryInput = document.getElementById('cSecondary');
-                            const backgroundInput = document.getElementById('cBackground');
-                            if(primaryInput) primaryInput.value = state.customTheme.primary;
-                            if(secondaryInput) secondaryInput.value = state.customTheme.secondary;
-                            if(backgroundInput) backgroundInput.value = state.customTheme.background;
-
-                            applyTheme();
-                            storage.saveSettings({ theme: state.theme, language: state.language, customTheme: state.customTheme });
-                        }
-                    });
-                });
-
-                const primaryInput = document.getElementById('cPrimary');
-                const secondaryInput = document.getElementById('cSecondary');
-                const backgroundInput = document.getElementById('cBackground');
-
-                const handleColorChange = () => {
-                    if (!primaryInput || !secondaryInput || !backgroundInput) return;
-                    state.customTheme.primary = primaryInput.value;
-                    state.customTheme.secondary = secondaryInput.value;
-                    state.customTheme.background = backgroundInput.value;
-                    state.theme = 'custom';
-                    applyTheme();
-                    storage.saveSettings({ theme: state.theme, language: state.language, customTheme: state.customTheme });
-                };
-
-                if (primaryInput) primaryInput.addEventListener('input', handleColorChange);
-                if (secondaryInput) secondaryInput.addEventListener('input', handleColorChange);
-                if (backgroundInput) backgroundInput.addEventListener('input', handleColorChange);
-
-                document.querySelectorAll('input[name="language"]').forEach(radio => {
-                    radio.addEventListener('change', (e) => {
-                        state.language = e.target.value;
-                        storage.saveSettings({ theme: state.theme, language: state.language, customTheme: state.customTheme });
-                        render(); // Re-render to apply new language to the whole page
-                    });
-                });
-                break;
-
             case 'new-game':
                 const newGameForm = document.getElementById('newGameForm');
                 if(newGameForm) newGameForm.addEventListener('submit', e => { e.preventDefault(); handleStartCampaign(newGameForm); });
@@ -1255,16 +1168,6 @@
                         }
                     });
                 }
-
-                // Use Item buttons
-                document.querySelectorAll('.btn-use-item').forEach(button => {
-                    button.addEventListener('click', (e) => {
-                        const itemName = e.currentTarget.dataset.itemName;
-                        if (itemName) {
-                            sendAction(`I use the ${itemName}.`);
-                        }
-                    });
-                });
                 break;
 
             case 'game':
@@ -1407,42 +1310,13 @@
           </div>
         </div>`;
       const modal=box.firstElementChild; host.appendChild(modal);
-      const saveSettings = () => storage.saveSettings({ theme: state.theme, language: state.language, customTheme: state.customTheme });
-
       modal.querySelectorAll('[data-preset]').forEach(btn=>{
-        btn.addEventListener('click',()=>{
-            const p=presets[+btn.getAttribute('data-preset')];
-            if (!p) return;
-            state.theme='custom';
-            state.customTheme={primary:p.primary,secondary:p.secondary,background:p.background};
-
-            qs('#mcPrimary', modal).value = p.primary;
-            qs('#mcSecondary', modal).value = p.secondary;
-            qs('#mcBackground', modal).value = p.background;
-
-            applyTheme();
-            saveSettings();
-        });
+        btn.addEventListener('click',()=>{ const p=presets[+btn.getAttribute('data-preset')]; state.theme='custom'; state.customTheme={primary:p.primary,secondary:p.secondary,background:p.background}; applyTheme(); });
       });
-
-      const handleModalColorChange = () => {
-        state.customTheme.primary = qs('#mcPrimary', modal).value;
-        state.customTheme.secondary = qs('#mcSecondary', modal).value;
-        state.customTheme.background = qs('#mcBackground', modal).value;
-        state.theme = 'custom';
-        applyTheme();
-        saveSettings();
-      };
-
-      onIn(modal,'#mcPrimary','input', handleModalColorChange);
-      onIn(modal,'#mcSecondary','input', handleModalColorChange);
-      onIn(modal,'#mcBackground','input', handleModalColorChange);
-
-      modal.querySelectorAll('input[name="mlang"]').forEach(r=>r.addEventListener('change',e=>{
-        state.language=e.target.value;
-        saveSettings();
-        render();
-      }));
+      onIn(modal,'#mcPrimary','input',e=>{ state.customTheme.primary=e.target.value; applyTheme(); });
+      onIn(modal,'#mcSecondary','input',e=>{ state.customTheme.secondary=e.target.value; applyTheme(); });
+      onIn(modal,'#mcBackground','input',e=>{ state.customTheme.background=e.target.value; applyTheme(); });
+      modal.querySelectorAll('input[name="mlang"]').forEach(r=>r.addEventListener('change',e=>{ state.language=e.target.value; render(); }));
       modal.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>modal.remove()));
     }
 
@@ -1457,31 +1331,24 @@
           <div class="space-y-3">
             ${players.map(p => {
               const isMe = p.user_code === state.user?.user_code;
-              const hpPercentage = (p.hp / (p.max_hp || 1)) * 100;
-              const energyPercentage = (p.energy / (p.max_energy || 1)) * 100;
+              const hpPercentage = (p.hp / p.max_hp) * 100;
               const avatarDisplay = p.avatar_url
                 ? `<img src="${p.avatar_url}" alt="Avatar" class="w-12 h-12 rounded-full object-cover">`
                 : `<div class="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-lg font-bold">${(p.username || '?').charAt(0).toUpperCase()}</div>`;
 
               return `
               <div class="p-3 bg-gray-800/50 rounded-lg">
-                <div class="flex items-center space-x-3 mb-3">
+                <div class="flex items-center space-x-3 mb-2">
                     ${avatarDisplay}
                     <div>
                         <p class="font-semibold">${isMe ? t('you') : p.username}</p>
                         <p class="text-xs text-gray-400">${p.is_host ? t('host') : 'Player'}</p>
                     </div>
                 </div>
-                <div class="space-y-2">
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-2.5 rounded-full" style="width: ${hpPercentage}%"></div>
-                    </div>
-                    <div class="text-xs text-gray-400 text-right">${p.hp} / ${p.max_hp} HP</div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-gradient-to-r from-blue-500 to-cyan-400 h-2.5 rounded-full" style="width: ${energyPercentage}%"></div>
-                    </div>
-                    <div class="text-xs text-gray-400 text-right">${p.energy} / ${p.max_energy} Energy</div>
+                <div class="w-full bg-gray-700 rounded-full h-2.5">
+                  <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-2.5 rounded-full" style="width: ${hpPercentage}%"></div>
                 </div>
+                <div class="text-xs text-gray-400 mt-1 text-right">${p.hp} / ${p.max_hp} HP</div>
               </div>
             `}).join('')}
           </div>
@@ -1550,8 +1417,8 @@
                         </div>
                         <div class="text-xs text-gray-400 mt-1 mb-2">${item.description || ''}</div>
                         <div class="flex gap-2">
-                            <button data-item-name="${item.name}" class="btn-use-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded disabled:opacity-50" ${!item.uses || item.uses > 0 ? '' : 'disabled'}>${t('useItem')}</button>
-                            <button data-item-id="${item.id}" class="btn-give-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">${t('give') || 'Give'}</button>
+                            <button data-item-id="${item.id}" class="btn-use-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Use</button>
+                            <button data-item-id="${item.id}" class="btn-give-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Give</button>
                         </div>
                     </div>
                 `).join('')
