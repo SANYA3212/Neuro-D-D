@@ -17,7 +17,7 @@ class UserProfile(BaseModel):
 class UserSettings(BaseModel):
     theme: str = "dark"
     language: str = "en"
-    # other settings can be added here
+    customTheme: Optional[Dict[str, str]] = None
 
 class Message(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)

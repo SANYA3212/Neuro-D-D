@@ -149,6 +149,17 @@
         attack:"Атаковать", explore:"Исследовать", negotiate:"Переговоры", useItem:"Использовать предмет", rollCube:"Бросить куб",
         enterAction:"Введите действие...", campaignStart:"Начало кампании", diceRoll:"Бросок куба",
         delete: "Удалить",
+        // Added translations
+        primary: "Основной",
+        secondary: "Вторичный",
+        background: "Фон",
+        player: "Игрок",
+        Cyberpunk: "Киберпанк",
+        Forest: "Лес",
+        inventory: "Инвентарь",
+        inventoryEmpty: "Ваш инвентарь пуст.",
+        use: "Использовать",
+        give: "Передать"
        },
       en: { newGame:"New Game", joinRoom:"Join Room", continue:"Continue", setPlot:"Set Plot", settings:"Settings",
         howToPlay:"How to Play", profile:"Profile", logout:"Logout", createRoom:"Create Room", joinByCode:"Join by Code",
@@ -416,13 +427,15 @@
     async function handleSaveSettings(newSettings) {
         if (!state.user) return;
 
-        const settingsForApi = {
+        // Update the local state first
+        Object.assign(state, newSettings);
+
+        // Always save and send the full settings object
+        const settingsToSave = {
             theme: state.theme,
             language: state.language,
+            customTheme: state.customTheme
         };
-
-        if (newSettings.language) settingsForApi.language = newSettings.language;
-        if (newSettings.theme) settingsForApi.theme = newSettings.theme;
 
         try {
             Object.assign(state, newSettings);
@@ -433,7 +446,7 @@
             });
             applyTheme();
 
-            await api.updateSettings(settingsForApi);
+            await api.updateSettings(settingsToSave);
             console.log("Settings saved to server successfully.");
 
             if (newSettings.language) {
@@ -791,12 +804,12 @@
                       <div class="space-y-3">
                         <div><label class="block text-sm text-gray-400 mb-1">${t('tone')}</label>
                           <select id="tone" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
-                            <option>${t('classicDnD')}</option><option>${t('epic')}</option><option>${t('dark')}</option><option>${t('humorous')}</option><option>${t('rulesFirst')}</option>
+                            <option value="classic_dnd">${t('classicDnD')}</option><option value="epic_fantasy">${t('epic')}</option><option value="dark_fantasy">${t('dark')}</option><option value="humorous">${t('humorous')}</option><option value="rules_first">${t('rulesFirst')}</option>
                           </select>
                         </div>
                         <div><label class="block text-sm text-gray-400 mb-1">${t('difficulty')}</label>
                           <select id="difficulty" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
-                            <option>${t('easy')}</option><option selected>${t('medium')}</option><option>${t('hard')}</option>
+                            <option value="easy">${t('easy')}</option><option value="medium" selected>${t('medium')}</option><option value="hard">${t('hard')}</option>
                           </select>
                         </div>
                       </div>
@@ -1232,6 +1245,22 @@
                         }
                     });
                 }
+
+                // Listener for the back to lobby button
+                addListener('backToLobby', 'click', () => go('lobby'));
+
+                // Listeners for quick action buttons
+                document.querySelectorAll('[data-quick]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const actionText = e.currentTarget.dataset.quick;
+                        const input = document.getElementById('gameInput');
+                        if (input) {
+                            input.value = actionText;
+                            sendAction(actionText);
+                            input.value = '';
+                        }
+                    });
+                });
                 break;
 
             case 'settings':
@@ -1250,6 +1279,23 @@
                         }
                     });
                 });
+
+                // Custom theme color pickers
+                addListener('cPrimary', 'input', (e) => {
+                    state.customTheme.primary = e.target.value;
+                    applyTheme();
+                    handleSaveSettings({ customTheme: state.customTheme });
+                });
+                addListener('cSecondary', 'input', (e) => {
+                    state.customTheme.secondary = e.target.value;
+                    applyTheme();
+                    handleSaveSettings({ customTheme: state.customTheme });
+                });
+                addListener('cBackground', 'input', (e) => {
+                    state.customTheme.background = e.target.value;
+                    applyTheme();
+                    handleSaveSettings({ customTheme: state.customTheme });
+                });
                 break;
 
             case 'profile':
@@ -1258,6 +1304,36 @@
                 break;
         }
         console.log("--- RENDER END ---");
+    }
+
+    async function handleChangeAvatar() {
+        const newAvatarUrl = prompt("Enter the URL for your new avatar:");
+        if (newAvatarUrl && newAvatarUrl.trim() !== "") {
+            try {
+                const updatedProfile = await api.updateAvatar(newAvatarUrl.trim());
+                state.user = updatedProfile;
+                if (state.currentPage === 'profile') {
+                    render();
+                }
+            } catch (error) {
+                alert(`Error updating avatar: ${error.message}`);
+            }
+        }
+    }
+
+    async function handleChangeUsername() {
+        const newUsername = prompt("Enter your new username:", state.user.username);
+        if (newUsername && newUsername.trim() !== "") {
+            try {
+                const updatedProfile = await api.updateProfile(newUsername.trim());
+                state.user = updatedProfile;
+                if (state.currentPage === 'profile') {
+                    render();
+                }
+            } catch (error) {
+                alert(`Error updating username: ${error.message}`);
+            }
+        }
     }
 
     // ====== Модалки ======
@@ -1360,7 +1436,7 @@
                     ${avatarDisplay}
                     <div>
                         <p class="font-semibold">${isMe ? t('you') : p.username}</p>
-                        <p class="text-xs text-gray-400">${p.is_host ? t('host') : 'Player'}</p>
+                        <p class="text-xs text-gray-400">${p.is_host ? t('host') : t('player')}</p>
                     </div>
                 </div>
                 <div class="w-full bg-gray-700 rounded-full h-2.5">
@@ -1423,10 +1499,10 @@
 
         return `
         <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
-            <h3 class="text-xl font-semibold mb-4">Inventory</h3>
+            <h3 class="text-xl font-semibold mb-4">${t('inventory')}</h3>
             <div class="space-y-2">
             ${me.inventory.length === 0
-                ? '<p class="text-sm text-gray-500">Your inventory is empty.</p>'
+                ? `<p class="text-sm text-gray-500">${t('inventoryEmpty')}</p>`
                 : me.inventory.map(item => `
                     <div class="p-2 bg-gray-800/50 rounded-lg text-sm">
                         <div class="flex justify-between items-center">
@@ -1435,8 +1511,8 @@
                         </div>
                         <div class="text-xs text-gray-400 mt-1 mb-2">${item.description || ''}</div>
                         <div class="flex gap-2">
-                            <button data-item-id="${item.id}" class="btn-use-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Use</button>
-                            <button data-item-id="${item.id}" class="btn-give-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">Give</button>
+                            <button data-item-id="${item.id}" class="btn-use-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">${t('use')}</button>
+                            <button data-item-id="${item.id}" class="btn-give-item flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded">${t('give')}</button>
                         </div>
                     </div>
                 `).join('')

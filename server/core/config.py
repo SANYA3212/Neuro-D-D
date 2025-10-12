@@ -23,7 +23,7 @@ EXAMPLES_FILE = PROMPTS_DIR / "examples.md"
 
 # --- Gemini AI Configuration ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL") # Use flash for speed and cost, but allow override
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash-lite") # A sensible default
 
 # --- Security ---
 # For simplicity, we're not using a complex signing key, but this is where it would go.
