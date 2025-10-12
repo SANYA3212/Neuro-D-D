@@ -1,7 +1,7 @@
 import re
 import json
 import google.generativeai as genai
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 
 from server.core import config, storage
 from server.core.connections import manager
@@ -35,13 +35,10 @@ def parse_ai_response(response_text: str) -> AICompleteResponse:
     return AICompleteResponse(text=text_content, meta=meta_data)
 
 
-@router.post("/complete", response_model=AICompleteResponse)
-async def get_ai_completion(
-    request: AICompleteRequest,
-    user_code: str = Depends(get_current_user_code)
-):
+async def _get_ai_completion_logic(room_code: str, user_code: str):
     """
-    Generates a response from the AI Dungeon Master.
+    Processes the collected player turns for a room, sends them to the AI,
+    and returns the AI's response.
     """
     if not config.GEMINI_API_KEY or config.GEMINI_API_KEY == "__PUT_YOUR_KEY_HERE__":
         raise HTTPException(
@@ -54,16 +51,21 @@ async def get_ai_completion(
             detail="Gemini model is not configured on the server."
         )
 
-    # 1. Gather context
-    profile = storage.get_user_profile_by_code(user_code)
-    if not profile:
-        raise HTTPException(status_code=404, detail="User profile not found.")
+    # 1. Gather context from the room state
+    room = storage.find_room_by_code(room_code)
+    if not room or not room.get('campaign_id'):
+        raise HTTPException(status_code=404, detail="Room or campaign not found.")
 
-    campaign_meta_data = storage.read_json(storage.get_campaign_meta_file(user_code, request.campaign_id))
-    if not campaign_meta_data:
+    campaign_id = room['campaign_id']
+    host_user_code = room['host_user_code']
+
+    campaign_meta = storage.get_campaign_meta(host_user_code, campaign_id)
+    if not campaign_meta:
         raise HTTPException(status_code=404, detail="Campaign not found.")
-    campaign_meta = CampaignMeta(**campaign_meta_data)
-    user_settings = await get_user_settings(user_code)
+
+    player_turns = room.get('player_turns', {})
+    if not player_turns:
+        raise HTTPException(status_code=400, detail="No player turns to process.")
 
     try:
         with open(config.SYSTEM_PROMPT_FILE, 'r', encoding='utf-8') as f:
@@ -71,61 +73,57 @@ async def get_ai_completion(
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="System prompt file not found.")
 
-    # 2. Construct the prompt
-    # The user already sends the message history, we just prepend the system prompt
-    # and provide context variables.
+    # 2. Construct the prompt from all player turns
+    turn_summary = []
+    for player_code, turn_data in player_turns.items():
+        player_profile = storage.get_user_profile_by_code(player_code)
+        player_name = player_profile.username if player_profile else "Unknown Player"
+        action = turn_data.get('action', 'does nothing.')
+        dice_roll = turn_data.get('dice_roll')
+        roll_str = ""
+        if dice_roll and isinstance(dice_roll, dict):
+            roll_str = f" (бросок d{dice_roll.get('sides')} → {dice_roll.get('result')})"
+
+        turn_summary.append(f"- **{player_name}**: {action}{roll_str}")
+
     full_prompt_context = f"""
 {system_prompt}
 
 ---
 ## Game Context
-- Player Name: {profile.username}
 - Campaign Name: {campaign_meta.name}
 - Tone: {campaign_meta.tone}
 - Difficulty: {campaign_meta.difficulty}
-- Language: {request.language or user_settings.language}
-- Last Dice Roll: {request.last_dice_roll if request.last_dice_roll else 'N/A'}
+---
+## Player Actions This Turn:
+{chr(10).join(turn_summary)}
 ---
 """
+    # Get the last 20 messages from the journal to use as history
+    journal = storage.get_campaign_journal(host_user_code, campaign_id)
+    history = journal.entries[-20:] if journal else []
 
-    # Combine system prompt with the message history
-    messages_for_ai = [{"role": "system", "content": full_prompt_context}]
-
-    # Convert our Pydantic Message models to dicts for the AI
-    for msg in request.messages:
-        # The Gemini API uses 'model' for the assistant's role
-        role = "model" if msg.role == "assistant" else msg.role
-        messages_for_ai.append({"role": role, "parts": [msg.content]})
+    messages_for_ai = [Message(role="system", content=full_prompt_context)] + history
 
     # 3. Call Gemini API
     try:
         genai.configure(api_key=config.GEMINI_API_KEY)
         model = genai.GenerativeModel(config.GEMINI_MODEL)
 
-        # The API expects role/parts format. We need to adapt.
-        # Let's reformat the messages for the `generate_content` method
-        formatted_messages = []
-        for msg in request.messages:
-            role = "model" if msg.role == "assistant" else msg.role
-            formatted_messages.append({'role': role, 'parts': [msg.content]})
-
-        # The last message is the user's prompt, the history is the preceding messages
-        # The library wants a history list and a final prompt.
-        history = formatted_messages[:-1]
-        prompt = formatted_messages[-1]['parts'][0]
-
-        # Let's build a simpler message list, as the `chat` approach is tricky
-        # The `generate_content` method can take a simple list of strings/parts
         final_prompt_list = [full_prompt_context]
-        for msg in request.messages:
-            final_prompt_list.append(f"**{msg.role.capitalize()}:** {msg.content}")
+        for msg in history:
+             final_prompt_list.append(f"**{msg.role.capitalize()}:** {msg.content}")
 
         response = model.generate_content("\n".join(final_prompt_list))
+
+        # After getting a response, clear the turn data for the next round
+        storage.clear_turn_data(room_code)
 
         # 4. Parse and process response
         parsed_response = parse_ai_response(response.text)
         meta = parsed_response.meta
         state_changed = False
+        return parsed_response
 
         # --- Persist AI response to journal ---
         # This is critical for synchronization, as it saves the AI's narrative.

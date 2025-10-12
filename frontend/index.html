@@ -888,13 +888,14 @@
                     ${[
                       { label:t('attack'), icon:'⚔️' }, { label:t('explore'), icon:'🔍' },
                       { label:t('negotiate'), icon:'💬' }, { label:t('useItem'), icon:'🎒' },
-                      { label:t('rollCube'), icon:'🎲' },
                     ].map(a=>`<button data-quick="${a.label}" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">${a.icon}</div><div>${a.label}</div></button>`).join('')}
+                    <button id="openDiceModalBtn" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">🎲</div><div>${t('rollCube')}</div></button>
                   </div>
                   <div class="flex items-center space-x-2">
                     <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3">
-                    <button id="gameSend" class="bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] hover:from-[var(--primary)]/90 hover:to-[var(--secondary)]/90 px-6 py-3 rounded-lg font-semibold transition-all">${t('send')}</button>
+                    <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all">${t('ready')}</button>
                   </div>
+                  <div id="hostControls" class="mt-4 text-right"></div>
                 </div>
               </div>
 
@@ -1249,18 +1250,58 @@
                 // Listener for the back to lobby button
                 addListener('backToLobby', 'click', () => go('lobby'));
 
+                // Listener for dice modal
+                addListener('openDiceModalBtn', 'click', openDiceChoiceModal);
+
+                // Player ready button
+                addListener('playerReadyBtn', 'click', () => {
+                    const input = document.getElementById('gameInput');
+                    if (state.ws) {
+                        state.ws.send(JSON.stringify({
+                            type: 'player_turn_ready',
+                            action: input.value,
+                            dice_roll: state.diceRoll
+                        }));
+                        // Disable the button after readying up
+                        document.getElementById('playerReadyBtn').disabled = true;
+                        document.getElementById('playerReadyBtn').classList.add('opacity-50', 'cursor-not-allowed');
+                        state.diceRoll = null; // Clear dice roll after submitting turn
+                    }
+                });
+
                 // Listeners for quick action buttons
                 document.querySelectorAll('[data-quick]').forEach(button => {
                     button.addEventListener('click', (e) => {
-                        const actionText = e.currentTarget.dataset.quick;
+                        const actionTemplate = e.currentTarget.dataset.quick;
                         const input = document.getElementById('gameInput');
                         if (input) {
-                            input.value = actionText;
-                            sendAction(actionText);
-                            input.value = '';
+                            input.value = `${actionTemplate}: `;
+                            input.focus();
                         }
                     });
                 });
+
+                // Host controls for sending the turn
+                const hostControls = document.getElementById('hostControls');
+                if (hostControls && state.currentRoom && state.user && state.currentRoom.host_user_code === state.user.user_code) {
+                    const allPlayersReady = state.currentRoom.players.length === (state.currentRoom.ready_players_turn || []).length;
+                    const buttonClass = allPlayersReady
+                        ? 'bg-blue-600 hover:bg-blue-700'
+                        : 'bg-gray-600 cursor-not-allowed opacity-50';
+                    hostControls.innerHTML = `
+                        <button id="hostSendTurnBtn" class="${buttonClass} px-6 py-3 rounded-lg font-semibold transition-all">
+                            Отправить ход нейросети (${(state.currentRoom.ready_players_turn || []).length}/${state.currentRoom.players.length})
+                        </button>
+                    `;
+
+                    if (allPlayersReady) {
+                        addListener('hostSendTurnBtn', 'click', () => {
+                            if (state.ws) {
+                                state.ws.send(JSON.stringify({ type: 'host_send_turn' }));
+                            }
+                        });
+                    }
+                }
                 break;
 
             case 'settings':
@@ -1337,32 +1378,63 @@
     }
 
     // ====== Модалки ======
-    function openDiceModal(){
-      const host=qs('#modals')||document.body;
-      const box=document.createElement('div');
-      box.innerHTML=`
+    function openDiceChoiceModal() {
+        const host = document.getElementById('modals') || document.body;
+        const box = document.createElement('div');
+        const dice = [
+            { sides: 20, desc: "Для большинства проверок и действий (атаки, спасброски, проверки навыков)." },
+            { sides: 12, desc: "Для урона от мощного оружия (двуручный топор)." },
+            { sides: 10, desc: "Для урона от тяжелого оружия (длинный меч)." },
+            { sides: 8, desc: "Для урона от среднего оружия (моргенштерн)." },
+            { sides: 6, desc: "Для урона от легкого оружия (короткий меч)." },
+            { sides: 4, desc: "Для урона от кинжалов и некоторых заклинаний." },
+            { sides: 100, desc: "Процентный бросок (d%). Используется для редких событий." },
+        ];
+
+        box.innerHTML = `
         <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div class="bg-black/50 rounded-xl p-6 border border-gray-800 max-w-md w-full">
-            <div class="flex justify-between items-center mb-6"><h3 class="text-2xl font-semibold">Бросок куба</h3><button class="text-gray-400 hover:text-white" data-close>×</button></div>
-            <div class="grid grid-cols-3 gap-4 mb-6">
-              ${[4,6,8,10,12,20].map(s=>`<button data-dice="${s}" class="p-4 bg-gray-800 hover:bg-gray-700 rounded-lg font-bold text-lg transition-all">d${s}</button>`).join('')}
+          <div class="bg-black/50 rounded-xl p-6 border border-gray-800 max-w-lg w-full">
+            <div class="flex justify-between items-center mb-6">
+              <h3 class="text-2xl font-semibold">${t('rollCube')}</h3>
+              <button class="text-gray-400 hover:text-white text-2xl" data-close>×</button>
             </div>
-            ${state.diceRoll?`
-              <div class="text-center p-4 bg-gradient-to-r from-[var(--primary)]/20 to-[var(--secondary)]/20 rounded-lg border border-[var(--primary)]/50">
-                <div class="text-4xl font-bold text-[var(--primary)] mb-2">${state.diceRoll.result}</div>
-                <div class="text-sm text-gray-400">d${state.diceRoll.sides} • ${state.diceRoll.timestamp}</div>
-              </div>`:''}
+            <div class="grid grid-cols-3 sm:grid-cols-4 gap-4 mb-6 text-center">
+              ${dice.map(d => `
+                <button data-dice="${d.sides}" title="${d.desc}" class="p-4 bg-gray-800 hover:bg-gray-700 rounded-lg font-bold text-lg transition-all aspect-square flex flex-col justify-center items-center">
+                  d${d.sides}
+                  <span class="text-xs font-normal text-gray-400">${d.sides === 100 ? '(d%)' : ''}</span>
+                </button>
+              `).join('')}
+            </div>
+            <div id="diceResultDisplay" class="text-center p-4 bg-gray-900/50 rounded-lg border border-gray-700 min-h-[100px] flex items-center justify-center">
+                <span class="text-gray-500">Выберите кубик для броска...</span>
+            </div>
             <div class="flex justify-end mt-6">
               <button data-close class="px-6 py-2 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors">${t('cancel')}</button>
             </div>
           </div>
         </div>`;
-      const modal=box.firstElementChild; host.appendChild(modal);
-      modal.querySelectorAll('[data-dice]').forEach(btn=>{
-        btn.addEventListener('click',()=>{ rollDice(parseInt(btn.getAttribute('data-dice'),10)); close(); });
-      });
-      modal.querySelectorAll('[data-close]').forEach(btn=>btn.addEventListener('click',close));
-      function close(){ modal.remove(); }
+
+        const modal = box.firstElementChild;
+        host.appendChild(modal);
+
+        const resultDisplay = modal.querySelector('#diceResultDisplay');
+
+        modal.querySelectorAll('[data-dice]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const sides = parseInt(btn.dataset.dice, 10);
+                const result = Math.floor(Math.random() * sides) + 1;
+
+                state.diceRoll = { sides, result };
+
+                resultDisplay.innerHTML = `
+                    <div class="text-sm text-gray-400">Вы бросили d${sides}</div>
+                    <div class="text-5xl font-bold text-[var(--primary)] my-2">${result}</div>
+                `;
+            });
+        });
+
+        modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
     }
 
     function openSettingsModal(){
@@ -1416,35 +1488,41 @@
 
     // ====== Вспомогательные рендер-функции ======
     function renderPlayers() {
-      if (!state.currentRoom?.players || state.currentRoom.players.length === 0) return '';
-      const players = state.currentRoom.players;
+        if (!state.currentRoom?.players || state.currentRoom.players.length === 0) return '';
+        const players = state.currentRoom.players;
+        const readyPlayers = state.currentRoom.ready_players_turn || [];
 
-      return `
+        return `
         <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
           <h3 class="text-xl font-semibold mb-4">${t('players')}</h3>
           <div class="space-y-3">
             ${players.map(p => {
-              const isMe = p.user_code === state.user?.user_code;
-              const hpPercentage = (p.hp / p.max_hp) * 100;
-              const avatarDisplay = p.avatar_url
-                ? `<img src="${p.avatar_url}" alt="Avatar" class="w-12 h-12 rounded-full object-cover">`
-                : `<div class="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-lg font-bold">${(p.username || '?').charAt(0).toUpperCase()}</div>`;
+                const isMe = p.user_code === state.user?.user_code;
+                const isReady = readyPlayers.includes(p.user_code);
+                const hpPercentage = (p.hp / p.max_hp) * 100;
+                const avatarDisplay = p.avatar_url
+                    ? `<img src="${p.avatar_url}" alt="Avatar" class="w-12 h-12 rounded-full object-cover">`
+                    : `<div class="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-lg font-bold">${(p.username || '?').charAt(0).toUpperCase()}</div>`;
 
-              return `
-              <div class="p-3 bg-gray-800/50 rounded-lg">
-                <div class="flex items-center space-x-3 mb-2">
-                    ${avatarDisplay}
-                    <div>
-                        <p class="font-semibold">${isMe ? t('you') : p.username}</p>
-                        <p class="text-xs text-gray-400">${p.is_host ? t('host') : t('player')}</p>
+                return `
+                <div class="p-3 bg-gray-800/50 rounded-lg border ${isReady ? 'border-green-500/50' : 'border-transparent'}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center space-x-3">
+                            ${avatarDisplay}
+                            <div>
+                                <p class="font-semibold">${isMe ? t('you') : p.username}</p>
+                                <p class="text-xs text-gray-400">${p.is_host ? t('host') : t('player')}</p>
+                            </div>
+                        </div>
+                        ${isReady ? '<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-xs">✓</div>' : ''}
                     </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-2.5 rounded-full" style="width: ${hpPercentage}%"></div>
+                    </div>
+                    <div class="text-xs text-gray-400 mt-1 text-right">${p.hp} / ${p.max_hp} HP</div>
                 </div>
-                <div class="w-full bg-gray-700 rounded-full h-2.5">
-                  <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-2.5 rounded-full" style="width: ${hpPercentage}%"></div>
-                </div>
-                <div class="text-xs text-gray-400 mt-1 text-right">${p.hp} / ${p.max_hp} HP</div>
-              </div>
-            `}).join('')}
+                `
+            }).join('')}
           </div>
         </div>`;
     }

@@ -78,6 +78,7 @@ async def get_room_details_logic(room_code: str) -> Optional[RoomDetailsResponse
         created_at=room.created_at,
         players=player_profiles,
         ready_players=room.ready_players,
+        ready_players_turn=room.ready_players_turn,
         campaign_id=room.campaign_id,
         campaign_meta=campaign_meta,
         journal=journal

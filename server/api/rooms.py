@@ -13,6 +13,7 @@ from server.core.models import (
 )
 from server.api.auth import get_current_user_code
 from server.game_logic.engine import get_room_details_logic
+from server.api.ai import _get_ai_completion_logic
 
 router = APIRouter(prefix="/rooms", tags=["Rooms & Lobby"])
 
@@ -142,8 +143,28 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
             elif data.get("type") == "start_game":
                 room = storage.find_room_by_code(room_code)
                 if room and room.get('host_user_code') == user_code:
-                    # We don't need to persist anything, just notify clients to change page
+                    storage.clear_turn_data(room_code) # Clear previous turn data on new game start
+                    action_taken = True
                     await manager.broadcast({"type": "game_starting"}, room_code)
+
+            elif data.get("type") == "player_turn_ready":
+                turn_data = {
+                    "action": data.get("action"),
+                    "dice_roll": data.get("dice_roll")
+                }
+                storage.record_player_turn(room_code, user_code, turn_data)
+                action_taken = True
+
+            elif data.get("type") == "host_send_turn":
+                room = storage.find_room_by_code(room_code)
+                if room and room.get('host_user_code') == user_code:
+                    # This triggers the AI call, which itself will save the journal
+                    # and handle state changes.
+                    await _get_ai_completion_logic(room_code, user_code)
+                    # After the AI has processed and state has been updated,
+                    # we broadcast the new state.
+                    action_taken = True
+
 
             if action_taken:
                 # If any state-changing action was taken, broadcast the new canonical state

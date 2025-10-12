@@ -70,9 +70,12 @@ class Room(BaseModel):
     name: Optional[str] = None
     is_public: bool = False
     players: List[str] = Field(default_factory=list) # List of user_codes
-    ready_players: List[str] = Field(default_factory=list) # List of user_codes who are ready
+    ready_players: List[str] = Field(default_factory=list) # List of user_codes who are ready in LOBBY
     campaign_id: Optional[str] = None # Link to the campaign, if any
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # New fields for in-game turn management
+    player_turns: Dict[str, Any] = Field(default_factory=dict)
+    ready_players_turn: List[str] = Field(default_factory=list)
 
 
 # --- API Request/Response Models ---
@@ -126,7 +129,8 @@ class RoomDetailsResponse(BaseModel):
     name: Optional[str] = None
     is_public: bool = False
     players: List[PlayerInfo] = Field(default_factory=list)
-    ready_players: List[str] = Field(default_factory=list)
+    ready_players: List[str] = Field(default_factory=list) # Lobby ready state
+    ready_players_turn: List[str] = Field(default_factory=list) # In-game turn ready state
     campaign_id: Optional[str] = None
     campaign_meta: Optional[CampaignMeta] = None
     created_at: datetime

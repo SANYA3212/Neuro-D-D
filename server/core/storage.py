@@ -120,6 +120,16 @@ def get_campaign_meta(user_code: str, campaign_id: str) -> Optional['CampaignMet
             return CampaignMeta(**meta_data)
     return None
 
+def get_campaign_journal(user_code: str, campaign_id: str) -> Optional['CampaignJournal']:
+    """Reads a campaign's journal.json file and returns a CampaignJournal object."""
+    from .models import CampaignJournal
+    journal_path = get_campaign_journal_file(user_code, campaign_id)
+    if journal_path:
+        journal_data = read_json(journal_path)
+        if journal_data:
+            return CampaignJournal(**journal_data)
+    return None
+
 def get_campaign_dir(user_code: str, campaign_id: str) -> Optional[Path]:
     """Gets the full path to a specific campaign directory."""
     try:
@@ -214,5 +224,32 @@ def toggle_player_ready(room_code: str, user_code: str):
                 room['ready_players'].remove(user_code)
             else:
                 room['ready_players'].append(user_code)
+            write_all_rooms(all_rooms)
+            break
+
+def record_player_turn(room_code: str, user_code: str, turn_data: Dict):
+    """Records a player's action for the current turn."""
+    all_rooms = get_all_rooms()
+    for room in all_rooms:
+        if room['room_code'] == room_code:
+            if 'player_turns' not in room:
+                room['player_turns'] = {}
+            if 'ready_players_turn' not in room:
+                room['ready_players_turn'] = []
+
+            room['player_turns'][user_code] = turn_data
+            if user_code not in room['ready_players_turn']:
+                room['ready_players_turn'].append(user_code)
+
+            write_all_rooms(all_rooms)
+            break
+
+def clear_turn_data(room_code: str):
+    """Clears all player turn data for a new round."""
+    all_rooms = get_all_rooms()
+    for room in all_rooms:
+        if room['room_code'] == room_code:
+            room['player_turns'] = {}
+            room['ready_players_turn'] = []
             write_all_rooms(all_rooms)
             break
