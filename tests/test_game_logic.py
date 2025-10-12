@@ -1,23 +1,23 @@
 import sys
 import os
-from unittest.mock import MagicMock
+import asyncio
+import uuid
+from unittest.mock import patch, MagicMock
+import pytest
 
 # Add the project root to the Python path to allow for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from server.game_logic import dice, engine
-from server.core.models import Message, CampaignMeta, UserSettings
+from server.core.models import UserProfile, RoomDetailsResponse
 
 def test_dice_roll():
-    print("Testing dice.roll()...")
     for sides in dice.VALID_DICE_SIDES:
         if sides == 100: continue # d100 is special
         result = dice.roll(sides)
         assert 1 <= result <= sides
-    print("OK")
 
 def test_d100_roll():
-    print("Testing dice.roll_d100()...")
     result_dict = dice.roll_d100()
     assert "tens" in result_dict
     assert "ones" in result_dict
@@ -31,48 +31,91 @@ def test_d100_roll():
     else:
         assert result_dict["result"] == result_dict["tens"] * 10 + result_dict["ones"]
 
-    print("OK")
-
 def test_seeded_roll():
-    print("Testing seeded dice.roll()...")
     result1 = dice.roll(20, seed=123)
     result2 = dice.roll(20, seed=123)
     assert result1 == result2
-    print("OK")
 
-def test_engine_placeholder():
+def test_dice_roll_invalid_sides():
+    with pytest.raises(ValueError):
+        dice.roll(1)
+    with pytest.raises(ValueError):
+        dice.roll(7)
+    with pytest.raises(ValueError):
+        dice.roll(25)
+
+def test_seeded_d100_roll():
+    result1 = dice.roll_d100(seed=42)
+    result2 = dice.roll_d100(seed=42)
+    assert result1 == result2
+
+@pytest.mark.asyncio
+@patch('server.game_logic.engine.storage.get_user_profile_by_code')
+@patch('server.game_logic.engine.storage.read_json')
+@patch('server.game_logic.engine.storage.get_campaign_journal_file')
+@patch('server.game_logic.engine.storage.get_campaign_meta_file')
+@patch('server.game_logic.engine.storage.get_all_rooms')
+async def test_get_room_details_logic_smoke_test(
+    mock_get_all_rooms,
+    mock_get_campaign_meta_file,
+    mock_get_campaign_journal_file,
+    mock_read_json,
+    mock_get_user_profile_by_code
+):
     """
-    This is a smoke test for the engine placeholder function.
-    It doesn't do much, but it ensures the function can be called
-    without errors and returns the expected structure.
+    Smoke test for get_room_details_logic to ensure it runs without errors
+    and returns the correct data structure, restoring coverage for the engine module.
     """
-    print("Testing engine.process_player_action()...")
+    # --- Mock Setup ---
+    room_code = "TEST"
+    host_code = "user_host"
+    player_code = "user_player"
+    campaign_id = str(uuid.uuid4())
 
-    # Mocking necessary inputs
-    mock_action = Message(role="user", content="I open the door.")
-    mock_meta = CampaignMeta(name="Test", host_user_code="test_user")
-    mock_journal = [Message(role="assistant", content="You see a door.")]
-    mock_settings = UserSettings(language="en").dict()
+    mock_get_all_rooms.return_value = [{
+        "room_code": room_code,
+        "host_user_code": host_code,
+        "players": [host_code, player_code],
+        "campaign_id": campaign_id
+    }]
 
-    result = engine.process_player_action(
-        action=mock_action,
-        campaign_meta=mock_meta,
-        campaign_journal=mock_journal,
-        user_settings=mock_settings
-    )
+    mock_get_campaign_meta_file.return_value = "path/to/meta.json"
+    mock_get_campaign_journal_file.return_value = "path/to/journal.json"
 
-    assert "messages" in result
-    assert "context" in result
-    assert len(result["messages"]) == 2 # assistant + user
-    assert result["messages"][-1] == mock_action
-    assert result["context"]["language"] == "en"
+    # Mock different return values for meta and journal
+    def read_json_side_effect(path):
+        if "meta" in path:
+            return {
+                "id": campaign_id,
+                "name": "Test Campaign",
+                "host_user_code": host_code,
+                "player_states": {
+                    host_code: {"hp": 15, "max_hp": 20, "inventory": []},
+                    player_code: {"hp": 18, "max_hp": 20, "inventory": []}
+                }
+            }
+        if "journal" in path:
+            return {"entries": []}
+        return None
+    mock_read_json.side_effect = read_json_side_effect
 
-    print("OK")
+    def get_profile_side_effect(code):
+        if code == host_code:
+            return UserProfile(user_code=host_code, username="Host", email="host@test.com", hashed_password="pw")
+        if code == player_code:
+            return UserProfile(user_code=player_code, username="Player", email="player@test.com", hashed_password="pw")
+        return None
+    mock_get_user_profile_by_code.side_effect = get_profile_side_effect
 
-if __name__ == "__main__":
-    print("--- Running Game Logic Smoke Tests ---")
-    test_dice_roll()
-    test_d100_roll()
-    test_seeded_roll()
-    test_engine_placeholder()
-    print("--- All tests passed successfully! ---")
+    # --- Test Execution ---
+    result = await engine.get_room_details_logic(room_code)
+
+    # --- Assertions ---
+    assert result is not None
+    assert isinstance(result, RoomDetailsResponse)
+    assert result.room_code == room_code
+    assert len(result.players) == 2
+    assert result.players[0].username == "Host"
+    assert result.players[1].username == "Player"
+    assert result.players[0].hp == 15
+    assert result.campaign_meta.name == "Test Campaign"
