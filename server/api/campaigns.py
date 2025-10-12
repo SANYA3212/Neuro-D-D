@@ -8,6 +8,14 @@ from server.core.models import (
     CampaignDetailsResponse, AddJournalEntryRequest
 )
 from server.api.auth import get_current_user_code
+from server.core import connections, storage
+from server.game_logic.engine import get_room_details_logic
+from pydantic import BaseModel
+from typing import Optional
+
+class UpdateCampaignRequest(BaseModel):
+    tone: Optional[str] = None
+    difficulty: Optional[str] = None
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
@@ -82,6 +90,45 @@ async def get_campaign_details(
         meta=CampaignMeta(**meta_data),
         journal=CampaignJournal(**journal_data)
     )
+
+@router.put("/{campaign_id}", response_model=CampaignMeta)
+async def update_campaign_settings(
+    campaign_id: str,
+    request: UpdateCampaignRequest,
+    user_code: str = Depends(get_current_user_code)
+):
+    """Updates settings for a campaign, like tone or difficulty."""
+    meta_path = storage.get_campaign_meta_file(user_code, campaign_id)
+    if not meta_path:
+        raise HTTPException(status_code=400, detail="Invalid campaign ID format.")
+
+    meta_data = storage.read_json(meta_path)
+    if not meta_data:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    campaign_meta = CampaignMeta(**meta_data)
+
+    # Authorization: Only the host can change settings
+    if campaign_meta.host_user_code != user_code:
+        raise HTTPException(status_code=403, detail="Only the campaign host can change settings.")
+
+    # Update the model with the new data
+    update_data = request.dict(exclude_unset=True)
+    updated_meta = campaign_meta.copy(update=update_data)
+
+    # Save the updated metadata
+    storage.write_json(meta_path, updated_meta.dict())
+
+    # Now, find the associated room and broadcast the state change
+    room = storage.find_room_by_campaign_id(campaign_id)
+    if room:
+        print(f"Campaign settings updated, broadcasting to room {room['room_code']}")
+        # We fetch the entire room details again to ensure a consistent state
+        updated_room_details = await get_room_details_logic(room['room_code'])
+        if updated_room_details:
+            await connections.manager.broadcast(updated_room_details.dict(), room['room_code'])
+
+    return updated_meta
 
 @router.post("/{campaign_id}/journal", response_model=CampaignJournal)
 async def add_journal_entry(

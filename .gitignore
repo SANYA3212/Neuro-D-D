@@ -15,3 +15,4 @@ venv/
 # data/users/
 # data/rooms.json
 # data/index.json
+data/

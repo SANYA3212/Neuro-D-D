@@ -179,11 +179,40 @@ def remove_player_from_room(room_code: str, user_code: str):
             room_found = True
             if user_code in room['players']:
                 room['players'].remove(user_code)
-                # If the host is the one leaving, the room should probably be deleted.
-                # For now, we just remove the player. If the player list becomes empty, delete room.
-                if not room['players']:
-                    all_rooms.remove(room)
+            if user_code in room['ready_players']:
+                 room['ready_players'].remove(user_code)
+            # If the host is the one leaving, the room should probably be deleted.
+            # For now, we just remove the player. If the player list becomes empty, delete room.
+            if not room['players']:
+                all_rooms.remove(room)
             break
 
     if room_found:
         write_all_rooms(all_rooms)
+
+def find_room_by_code(room_code: str) -> Optional[Dict]:
+    """Finds a room by its code."""
+    all_rooms = get_all_rooms()
+    return next((r for r in all_rooms if r['room_code'] == room_code), None)
+
+def add_lobby_chat_message(host_user_code: str, campaign_id: str, message: 'Message'):
+    """Adds a chat message to the lobby_chat list in the campaign journal."""
+    from .models import CampaignJournal # Late import
+    journal_path = get_campaign_journal_file(host_user_code, campaign_id)
+    if journal_path:
+        journal_data = read_json(journal_path) or {}
+        journal = CampaignJournal(**journal_data)
+        journal.lobby_chat.append(message)
+        write_json(journal_path, journal.dict())
+
+def toggle_player_ready(room_code: str, user_code: str):
+    """Toggles a player's ready status in a room."""
+    all_rooms = get_all_rooms()
+    for room in all_rooms:
+        if room['room_code'] == room_code:
+            if user_code in room['ready_players']:
+                room['ready_players'].remove(user_code)
+            else:
+                room['ready_players'].append(user_code)
+            write_all_rooms(all_rooms)
+            break

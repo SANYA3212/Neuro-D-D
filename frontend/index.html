@@ -111,11 +111,13 @@
       getCampaigns: () => api.fetchJSON('/campaigns'),
       updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
       updateAvatar: (avatar_url) => api.fetchJSON('/users/profile', { method: 'PUT', body: { avatar_url } }),
+      updateSettings: (settings) => api.fetchJSON('/users/settings', { method: 'PUT', body: settings }),
       getAiCompletion: (campaignId, messages, lastDiceRoll, language) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages, last_dice_roll: lastDiceRoll, language: language } }),
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
       createRoom: (isPublic, name, campaignId = null) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name, campaign_id: campaignId } }),
       createCampaign: (name, tone, difficulty) => api.fetchJSON('/campaigns', { method: 'POST', body: { name, tone, difficulty } }),
+      updateCampaign: (campaignId, settings) => api.fetchJSON(`/campaigns/${campaignId}`, { method: 'PUT', body: settings }),
       getCampaignDetails: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`),
       deleteCampaign: (campaignId) => api.fetchJSON(`/campaigns/${campaignId}`, { method: 'DELETE' }),
     };
@@ -230,62 +232,29 @@
 
         state.ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
-            console.log("WS a reçu:", message);
+            console.log("WS received:", message);
 
-            // Initial state on join vs. delta updates
-            if (message.room_code && message.players) { // This is the initial "welcome" state
-                console.log("Received 'welcome' state from WebSocket.");
+            if (message.type === 'game_starting') {
+                go('game');
+                return;
+            }
+
+            // ALL other messages are now full state updates
+            if (message.room_code && message.players) {
                 state.currentRoom = message;
                 state.sceneHistory = message.journal?.entries || [];
                 state.chatMessages = processJournal(message.journal, message.players);
 
-                // Also sync campaign state if joining a game in progress
                 if (message.campaign_meta) {
-                    console.log("Welcome state has campaign meta, syncing state directly.");
                     syncCampaignState({ meta: message.campaign_meta, journal: message.journal });
                 }
-            } else {
-                // These are delta updates
-                switch (message.type) {
-                    case 'player_joined':
-                        if (state.currentRoom && !state.currentRoom.players.some(p => p.user_code === message.player.user_code)) {
-                            state.currentRoom.players.push(message.player);
-                        }
-                        break;
-                    case 'player_left':
-                        if (state.currentRoom) {
-                            state.currentRoom.players = state.currentRoom.players.filter(p => p.user_code !== message.user_code);
-                            state.currentRoom.ready_players = state.currentRoom.ready_players.filter(uc => uc !== message.user_code);
-                        }
-                        break;
-                    case 'player_ready_changed':
-                        if (state.currentRoom) {
-                            if (message.is_ready) {
-                                if (!state.currentRoom.ready_players.includes(message.user_code)) {
-                                    state.currentRoom.ready_players.push(message.user_code);
-                                }
-                            } else {
-                                state.currentRoom.ready_players = state.currentRoom.ready_players.filter(uc => uc !== message.user_code);
-                            }
-                        }
-                        break;
-                    case 'new_message':
-                         state.chatMessages.push({
-                            id: message.id, text: message.text, sender: message.sender,
-                            timestamp: new Date(message.timestamp).toLocaleTimeString()
-                        });
-                        break;
-                    case 'game_starting':
-                        go('game');
-                        break;
-                    default:
-                        console.log("Received unhandled WS delta message:", message);
-                }
-            }
 
-            // Re-render on any update
-            if (state.currentPage === 'lobby' || state.currentPage === 'game') {
-                render();
+                // Re-render if we are on a page that displays this info
+                if (state.currentPage === 'lobby' || state.currentPage === 'game') {
+                    render();
+                }
+            } else {
+                console.log("Received unhandled WS message:", message);
             }
         };
 
@@ -442,6 +411,37 @@
       storage.clearCurrentRoomCode();
       state.user = null;
       go('landing');
+    }
+
+    async function handleSaveSettings(newSettings) {
+        if (!state.user) return;
+
+        const settingsForApi = {
+            theme: state.theme,
+            language: state.language,
+        };
+
+        if (newSettings.language) settingsForApi.language = newSettings.language;
+        if (newSettings.theme) settingsForApi.theme = newSettings.theme;
+
+        try {
+            Object.assign(state, newSettings);
+            storage.saveSettings({
+                theme: state.theme,
+                language: state.language,
+                customTheme: state.customTheme
+            });
+            applyTheme();
+
+            await api.updateSettings(settingsForApi);
+            console.log("Settings saved to server successfully.");
+
+            if (newSettings.language) {
+                render(); // Re-render if language changed to update all text
+            }
+        } catch (error) {
+            alert(`Error saving settings: ${error.message}`);
+        }
     }
     function rollDice(sides, isPrivate=false){
       state.isRolling=true; render();
@@ -1167,6 +1167,28 @@
                         }
                     });
                 }
+
+                // Campaign Settings Handlers (Host only)
+                const room = state.currentRoom;
+                if (room && room.host_user_code === state.user?.user_code && room.campaign_id) {
+                    const toneSelect = document.getElementById('tone');
+                    const difficultySelect = document.getElementById('difficulty');
+
+                    if (toneSelect) {
+                        toneSelect.addEventListener('change', (e) => {
+                            console.log(`Host changed tone to: ${e.target.value}`);
+                            api.updateCampaign(room.campaign_id, { tone: e.target.value })
+                                .catch(err => alert(`Error updating tone: ${err.message}`));
+                        });
+                    }
+                    if (difficultySelect) {
+                        difficultySelect.addEventListener('change', (e) => {
+                            console.log(`Host changed difficulty to: ${e.target.value}`);
+                            api.updateCampaign(room.campaign_id, { difficulty: e.target.value })
+                                .catch(err => alert(`Error updating difficulty: ${err.message}`));
+                        });
+                    }
+                }
                 break;
 
             case 'game':
@@ -1211,34 +1233,31 @@
                     });
                 }
                 break;
+
+            case 'settings':
+                document.querySelectorAll('input[name="language"]').forEach(radio => {
+                    radio.addEventListener('change', (e) => {
+                        handleSaveSettings({ language: e.target.value });
+                    });
+                });
+                document.querySelectorAll('[data-preset]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const presetIndex = e.currentTarget.dataset.preset;
+                        const presets = themePresets();
+                        if (presets[presetIndex]) {
+                            const p = presets[presetIndex];
+                            handleSaveSettings({ theme: 'custom', customTheme: { primary: p.primary, secondary: p.secondary, background: p.background } });
+                        }
+                    });
+                });
+                break;
+
+            case 'profile':
+                addListener('changeAvatarBtn', 'click', handleChangeAvatar);
+                addListener('changeUsernameBtn', 'click', handleChangeUsername);
+                break;
         }
         console.log("--- RENDER END ---");
-    }
-
-    async function handleChangeAvatar() {
-        const newAvatarUrl = prompt("Enter the URL for your new avatar:");
-        if (newAvatarUrl && newAvatarUrl.trim() !== "") {
-            try {
-                const updatedProfile = await api.updateAvatar(newAvatarUrl.trim());
-                state.user = updatedProfile;
-                render(); // Re-render to show the new avatar
-            } catch (error) {
-                alert(`Error updating avatar: ${error.message}`);
-            }
-        }
-    }
-
-    async function handleChangeUsername() {
-        const newUsername = prompt("Enter your new username:", state.user.username);
-        if (newUsername && newUsername.trim() !== "") {
-            try {
-                const updatedProfile = await api.updateProfile(newUsername.trim());
-                state.user = updatedProfile;
-                render(); // Re-render to show the new username
-            } catch (error) {
-                alert(`Error updating username: ${error.message}`);
-            }
-        }
     }
 
     // ====== Модалки ======

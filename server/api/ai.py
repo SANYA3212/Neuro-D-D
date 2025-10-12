@@ -48,6 +48,11 @@ async def get_ai_completion(
             status_code=500,
             detail="Gemini API key is not configured on the server."
         )
+    if not config.GEMINI_MODEL:
+        raise HTTPException(
+            status_code=500,
+            detail="Gemini model is not configured on the server."
+        )
 
     # 1. Gather context
     profile = storage.get_user_profile_by_code(user_code)
