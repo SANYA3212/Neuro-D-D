@@ -75,7 +75,7 @@
     const api = {
       BASE_URL: '/api',
       async fetchJSON(path, options = {}) {
-        console.log(`%cAPI CALL: ${options.method || 'GET'} ${path}`, 'color: #fb923c', options.body ? JSON.parse(options.body) : '');
+        console.log(`%cAPI CALL: ${options.method || 'GET'} ${path}`, 'color: #fb923c', options.body || '');
         const url = this.BASE_URL + path;
         const headers = { ...options.headers };
         const userCode = storage.getUserCode();
@@ -112,7 +112,6 @@
       updateProfile: (username) => api.fetchJSON('/users/profile', { method: 'PUT', body: { username } }),
       updateAvatar: (avatar_url) => api.fetchJSON('/users/profile', { method: 'PUT', body: { avatar_url } }),
       getAiCompletion: (campaignId, messages, lastDiceRoll, language) => api.fetchJSON('/ai/complete', { method: 'POST', body: { campaign_id: campaignId, messages, last_dice_roll: lastDiceRoll, language: language } }),
-      createRoom: (isPublic, name) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name } }),
       joinRoom: (roomCode) => api.fetchJSON('/rooms/join', { method: 'POST', body: { room_code: roomCode } }),
       getRoomDetails: (roomCode) => api.fetchJSON(`/rooms/${roomCode}`),
       createRoom: (isPublic, name, campaignId = null) => api.fetchJSON('/rooms', { method: 'POST', body: { is_public: isPublic, name: name, campaign_id: campaignId } }),
