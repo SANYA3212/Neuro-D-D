@@ -1516,6 +1516,9 @@
 
         modal.querySelectorAll('[data-dice]').forEach(btn => {
             btn.addEventListener('click', () => {
+                if (!state.diceRoll) {
+                    state.diceRoll = { main: null, multiplier: null };
+                }
                 const sides = parseInt(btn.dataset.dice, 10);
                 const result = Math.floor(Math.random() * sides) + 1;
 
