@@ -521,12 +521,27 @@
         render();
       },1000);
     }
+    function simulateTyping(element, text, onComplete) {
+        let i = 0;
+        const speed = 20; // Lower is faster
+        element.innerHTML = ''; // Clear the container
+
+        function type() {
+            if (i < text.length) {
+                element.innerHTML += text.charAt(i);
+                i++;
+                setTimeout(type, speed);
+            } else if (onComplete) {
+                onComplete();
+            }
+        }
+        type();
+    }
     async function sendAction(text) {
       const action = text.trim();
       if (!action) return;
 
       const userMessage = { role: 'user', content: action };
-      // This is the master/game log, not the player chat.
       state.sceneHistory.push(userMessage);
 
       // Show AI is thinking
@@ -540,24 +555,41 @@
         const campaignId = state.currentCampaign.id;
         const messagesForApi = state.sceneHistory.map(h => ({ role: h.role, content: h.content }));
 
-        // Get the last dice roll result, if any, and then clear it
         const lastDiceRoll = state.diceRoll ? state.diceRoll.result : null;
         state.diceRoll = null;
 
         const aiResponse = await api.getAiCompletion(campaignId, messagesForApi, lastDiceRoll, state.language);
 
-        const assistantMessage = { role: 'assistant', content: aiResponse.text };
-        state.sceneHistory.push(assistantMessage);
+        // --- Typing Effect Logic ---
+        state.isRolling = false; // Stop the "thinking" indicator
+        const messageId = `ai-msg-${Date.now()}`;
+        const placeholderMessage = { role: 'assistant', content: '', id: messageId };
+        state.sceneHistory.push(placeholderMessage);
+        render(); // Render the scene with the empty container
 
-        // Handle metadata
+        const aiMessageContainer = document.getElementById(messageId);
+        if (aiMessageContainer) {
+            simulateTyping(aiMessageContainer, aiResponse.text, () => {
+                // Once typing is complete, update the state object for consistency on re-renders
+                const finalMessage = state.sceneHistory.find(m => m.id === messageId);
+                if (finalMessage) {
+                    finalMessage.content = aiResponse.text;
+                }
+            });
+        } else {
+             // Fallback for safety
+            const assistantMessage = { role: 'assistant', content: aiResponse.text };
+            state.sceneHistory[state.sceneHistory.length - 1] = assistantMessage; // Replace placeholder
+            render();
+        }
+
+
         if (aiResponse.meta) {
           console.log("AI Metadata:", aiResponse.meta);
-          // TODO: Implement HP changes and other game mechanics based on meta
         }
 
       } catch (error) {
         state.chatMessages.push({ id: Date.now(), text: `Ошибка: ${error.message}`, sender: 'System', timestamp: new Date().toLocaleTimeString() });
-      } finally {
         state.isRolling = false;
         render();
       }
@@ -907,7 +939,6 @@
                 <button id="toggleMute" class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-800 hover:bg-gray-700 transition-colors" title="${state.isMuted?t('unmute'):t('mute')}">${state.isMuted?'🔇':'🔊'}</button>
                 <button id="toggleMic" class="w-10 h-10 rounded-full flex items-center justify-center ${state.isMicrophoneActive?'bg-red-600':'bg-gray-800 hover:bg-gray-700'} transition-colors" title="${state.isMicrophoneActive?t('microphoneOn'):t('microphoneOff')}">🎤</button>
                 <button id="openSettings" class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-800 hover:bg-gray-700 transition-colors" title="${t('settings')}">⚙️</button>
-                <button class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold text-sm transition-colors">${t('saveCheckpoint')}</button>
               </div>
             </div>
 
