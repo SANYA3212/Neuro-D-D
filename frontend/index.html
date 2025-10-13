@@ -973,8 +973,8 @@
                         const player = state.currentRoom.players.find(p => p.user_code === playerCode);
                         const playerName = player ? player.username : '...';
                         let rollText = '';
-                        if (turnData.dice_roll) {
-                            rollText = ` <span class="font-bold text-gray-400">(d${turnData.dice_roll.sides} → ${turnData.dice_roll.result})</span>`;
+                        if (turnData.dice_roll && turnData.dice_roll.main) {
+                            rollText = ` <span class="font-bold text-gray-400">(d${turnData.dice_roll.main.sides} → ${turnData.dice_roll.main.result})</span>`;
                         }
                         return `
                             <div class="text-sm p-2 bg-gray-800/50 rounded-lg player-action-enter">
