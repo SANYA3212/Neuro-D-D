@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Tailwind для стилей из исходника (можно удалить и заменить своим CSS) -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Marked.js for Markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
       --primary:#ff4500; --secondary:#8b0000; --background:#000000;
@@ -20,6 +22,15 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 4px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--secondary); }
+
+    /* Animation for player actions */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .player-action-enter {
+      animation: fadeIn 0.5s ease-out;
+    }
   </style>
 </head>
 <body class="min-h-screen">
@@ -218,6 +229,7 @@
       // If we are leaving the lobby or game, disconnect the websocket
       if ((state.currentPage === 'lobby' || state.currentPage === 'game') && (page !== 'lobby' && page !== 'game')) {
         console.log("Leaving a game page, disconnecting WebSocket and clearing room code.");
+        state.diceRoll = null; // Clear dice roll when leaving game
         disconnectWebSocket();
         storage.clearCurrentRoomCode();
       }
@@ -272,15 +284,27 @@
 
             // ALL other messages are now full state updates
             if (message.room_code && message.players) {
-                // When a new full state arrives, it means a new turn is starting.
-                // If the game input field exists, clear it for the new turn.
-                const gameInput = document.getElementById('gameInput');
-                if (gameInput) {
-                    gameInput.value = '';
-                }
+                // Smart-clear input field logic
+                const currentUserCode = state.user?.user_code;
+                const oldRoomState = state.currentRoom;
 
+                // Check if the user was ready in the previous state
+                const wasReady = oldRoomState?.ready_players_turn?.includes(currentUserCode);
+
+                // Update state
                 state.currentRoom = message;
                 state.sceneHistory = message.journal?.entries || [];
+
+                // Check if the user is NOT ready in the new state
+                const isNotReadyAnymore = !state.currentRoom?.ready_players_turn?.includes(currentUserCode);
+
+                // If the player was ready and now is not, it's a new turn for them.
+                if (wasReady && isNotReadyAnymore) {
+                    // Clear the dice roll for the new turn
+                    state.diceRoll = null;
+
+                    // The input field will be cleared on re-render because its value is not stored in state
+                }
                 state.chatMessages = processJournal(message.journal, message.players);
 
                 if (message.campaign_meta) {
@@ -329,6 +353,7 @@
         }
 
         try {
+            state.diceRoll = null; // Clear any previous dice rolls
             const newCampaign = await api.createCampaign(name, tone, difficulty);
             state.currentCampaign = newCampaign;
 
@@ -390,6 +415,7 @@
 
     async function handleContinueGame(campaignId) {
       try {
+        state.diceRoll = null; // Clear any previous dice rolls
         const campaignDetails = await api.getCampaignDetails(campaignId);
         syncCampaignState(campaignDetails);
 
@@ -844,11 +870,11 @@
                     <div>
                       <h3 class="text-lg font-semibold mb-3">${t('chat')}</h3>
                       <div id="lobbyChatBox" class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto">
-                        <div class="space-y-3 text-sm">
+                        <div class="space-y-3 text-sm prose prose-invert max-w-none">
                           ${state.chatMessages.map(msg=>`
                             <div class="${msg.sender==='system'?'text-[var(--primary)] italic':''}">
                               ${msg.sender!=='system'?`<div class="font-semibold text-[var(--primary)]">${msg.sender}</div>`:''}
-                              <div>${msg.text}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
+                              <div>${marked.parse(msg.text)}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
                             </div>`).join('')}
                         </div>
                       </div>
@@ -899,7 +925,7 @@
                       state.sceneHistory.map(scene=>`
                         <div class="mb-6 ${scene.role ==='assistant'?'text-gray-300':'text-white'}">
                           <p class="font-bold text-lg mb-2 ${scene.role === 'assistant' ? 'text-[var(--primary)]' : 'text-cyan-400'}">${scene.role === 'assistant' ? 'Game Master' : 'Players'}</p>
-                          <p class="text-lg leading-relaxed whitespace-pre-wrap">${scene.content}</p>
+                          <div class="text-lg leading-relaxed whitespace-pre-wrap prose prose-invert max-w-none">${marked.parse(scene.content)}</div>
                           ${scene.image?`<img src="${scene.image}" alt="Сцена" class="w-full h-80 object-cover rounded-lg my-4">`:''}
                         </div>`).join('')}
                     ${state.isRolling?`
@@ -924,26 +950,26 @@
                     <button id="openDiceModalBtn" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">🎲</div><div>${t('rollCube')}</div></button>
                   </div>
                   <div class="flex items-center space-x-2">
-                    ${state.diceRoll ? `
-                        <div data-testid="dice-roll-display" class="flex items-center space-x-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700">
-                            <div class="text-center">
-                                <div class="text-xs text-gray-400">d${state.diceRoll.sides}</div>
-                                <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll.result}</div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-xs text-gray-400">Множ.</div>
-                                <div class="font-bold text-xl text-cyan-400">x1</div>
-                            </div>
+                    <div data-testid="dice-roll-display" class="flex items-center space-x-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700">
+                        <div class="text-center">
+                            <div class="text-xs text-gray-400">d${state.diceRoll ? state.diceRoll.sides : 20}</div>
+                            <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll ? state.diceRoll.result : '—'}</div>
                         </div>
-                    ` : ''}
+                        <div class="text-center">
+                            <div class="text-xs text-gray-400">Множ.</div>
+                            <div class="font-bold text-xl text-cyan-400">x1</div>
+                        </div>
+                    </div>
                     <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${isTurnReady ? 'disabled' : ''}>
                     <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all ${isTurnReady ? 'opacity-50 cursor-not-allowed' : ''}" ${isTurnReady ? 'disabled' : ''}>${t('ready')}</button>
                   </div>
                   <div id="hostControls" class="mt-4 text-right"></div>
 
                   <!-- Player Actions Display -->
-                  <div id="playerActionsDisplay" class="mt-4 space-y-2">
-                    ${Object.entries(state.currentRoom?.player_turns || {}).map(([playerCode, turnData]) => {
+                  <div id="playerActionsDisplay" class="mt-4 space-y-2 min-h-[50px] p-2 bg-black/20 rounded-lg">
+                    ${Object.entries(state.currentRoom?.player_turns || {}).length === 0
+                        ? `<div class="text-sm text-gray-500 text-center italic">Ожидание действий игроков...</div>`
+                        : Object.entries(state.currentRoom?.player_turns || {}).map(([playerCode, turnData]) => {
                         const player = state.currentRoom.players.find(p => p.user_code === playerCode);
                         const playerName = player ? player.username : '...';
                         let rollText = '';
@@ -951,7 +977,7 @@
                             rollText = ` <span class="font-bold text-gray-400">(d${turnData.dice_roll.sides} → ${turnData.dice_roll.result})</span>`;
                         }
                         return `
-                            <div class="text-sm p-2 bg-gray-800/50 rounded-lg">
+                            <div class="text-sm p-2 bg-gray-800/50 rounded-lg player-action-enter">
                                 <span class="font-semibold text-[var(--primary)]">${playerName}:</span>
                                 <span class="text-gray-300">${turnData.action || '...'}</span>
                                 ${rollText}
@@ -965,12 +991,12 @@
               <div class="lg:col-span-1 space-y-6">
                 <div class="bg-black/50 rounded-xl border border-gray-800">
                   <div class="p-4 border-b border-gray-800"><h3 class="text-xl font-semibold">${t('chat')}</h3></div>
-                  <div id="chatBox" class="p-4 h-96 overflow-y-auto">
-                    <div class="space-y-3 text-sm">
+                  <div id="chatBox" class="p-4 h-96 overflow-y-auto custom-scrollbar">
+                    <div class="space-y-3 text-sm prose prose-invert max-w-none">
                       ${state.chatMessages.map(msg=>`
                         <div class="${msg.sender==='system'?'text-[var(--primary)] italic':''}">
                           ${msg.sender!=='system'?`<div class="font-semibold text-[var(--primary)]">${msg.sender}</div>`:''}
-                          <div>${msg.text}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
+                          <div>${marked.parse(msg.text)}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
                         </div>`).join('')}
                     </div>
                   </div>

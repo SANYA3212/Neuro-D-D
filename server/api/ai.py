@@ -103,6 +103,7 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
 - Campaign Name: {campaign_meta.name}
 - Tone: {campaign_meta.tone}
 - Difficulty: {campaign_meta.difficulty}
+- Language for Response: {request.language.upper()} (YOU MUST RESPOND IN THIS LANGUAGE)
 ---
 ## Player Actions This Turn:
 {chr(10).join(turn_summary)}
