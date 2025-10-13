@@ -45,7 +45,7 @@
       currentRoom: null, // Will hold { id, name, players: [{name, hp, max_hp, is_me}], ... }
       initiativeOrder: [], // Will hold { name, roll }
       sceneHistory: [],
-      diceRoll: null,
+      diceRoll: { main: null, multiplier: null },
       isRolling: false,
       isMuted: false,
       isMicrophoneActive: false,
@@ -54,6 +54,7 @@
       customTheme: { primary:'#ff4500', secondary:'#8b0000', background:'#000000' },
       chatMessages: [],
       ws: null,
+      gameInputContent: "", // Persist user input across re-renders
     };
 
     function processJournal(journal, players) {
@@ -300,10 +301,9 @@
 
                 // If the player was ready and now is not, it's a new turn for them.
                 if (wasReady && isNotReadyAnymore) {
-                    // Clear the dice roll for the new turn
+                    // Clear the dice roll and input for the new turn
                     state.diceRoll = null;
-
-                    // The input field will be cleared on re-render because its value is not stored in state
+                    state.gameInputContent = "";
                 }
                 state.chatMessages = processJournal(message.journal, message.players);
 
@@ -952,15 +952,15 @@
                   <div class="flex items-center space-x-2">
                     <div data-testid="dice-roll-display" class="flex items-center space-x-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700">
                         <div class="text-center">
-                            <div class="text-xs text-gray-400">d${state.diceRoll ? state.diceRoll.sides : 20}</div>
-                            <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll ? state.diceRoll.result : '—'}</div>
+                            <div class="text-xs text-gray-400">d${state.diceRoll.main ? state.diceRoll.main.sides : '—'}</div>
+                            <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll.main ? state.diceRoll.main.result : '—'}</div>
                         </div>
                         <div class="text-center">
                             <div class="text-xs text-gray-400">Множ.</div>
-                            <div class="font-bold text-xl text-cyan-400">x1</div>
+                            <div class="font-bold text-xl text-cyan-400">${state.diceRoll.multiplier ? `x${state.diceRoll.multiplier.result}` : '—'}</div>
                         </div>
                     </div>
-                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${isTurnReady ? 'disabled' : ''}>
+                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${isTurnReady ? 'disabled' : ''} value="${state.gameInputContent}" oninput="state.gameInputContent = this.value">
                     <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all ${isTurnReady ? 'opacity-50 cursor-not-allowed' : ''}" ${isTurnReady ? 'disabled' : ''}>${t('ready')}</button>
                   </div>
                   <div id="hostControls" class="mt-4 text-right"></div>
@@ -1519,10 +1519,15 @@
                 const sides = parseInt(btn.dataset.dice, 10);
                 const result = Math.floor(Math.random() * sides) + 1;
 
-                state.diceRoll = { sides, result };
+                if (state.diceRoll.main === null) {
+                    state.diceRoll.main = { sides, result };
+                } else {
+                    state.diceRoll.multiplier = { sides, result };
+                }
 
                 resultDisplay.innerHTML = `
-                    <div class="text-sm text-gray-400">Вы бросили d${sides}</div>
+                    <div class="text-sm text-gray-400">Основной: d${state.diceRoll.main.sides} → ${state.diceRoll.main.result}</div>
+                    ${state.diceRoll.multiplier ? `<div class="text-sm text-gray-400">Множитель: d${state.diceRoll.multiplier.sides} → ${state.diceRoll.multiplier.result}</div>` : ''}
                     <div class="text-5xl font-bold text-[var(--primary)] my-2">${result}</div>
                 `;
 

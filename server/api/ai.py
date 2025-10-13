@@ -82,6 +82,12 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="System prompt file (game_rule.json) not found or corrupted.")
 
+    # 1.5 Get host's language setting for the response
+    host_settings_data = storage.read_json(storage.get_user_settings_file(host_user_code))
+    language = "ru"  # Default to Russian
+    if host_settings_data and host_settings_data.get("language"):
+        language = host_settings_data.get("language")
+
     # 2. Construct the prompt from all player turns
     turn_summary = []
     for player_code, turn_data in player_turns.items():
@@ -103,7 +109,7 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
 - Campaign Name: {campaign_meta.name}
 - Tone: {campaign_meta.tone}
 - Difficulty: {campaign_meta.difficulty}
-- Language for Response: {request.language.upper()} (YOU MUST RESPOND IN THIS LANGUAGE)
+- Language for Response: {language.upper()} (YOU MUST RESPOND IN THIS LANGUAGE)
 ---
 ## Player Actions This Turn:
 {chr(10).join(turn_summary)}
