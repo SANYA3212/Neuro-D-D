@@ -96,8 +96,13 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         action = turn_data.get('action', 'does nothing.')
         dice_roll = turn_data.get('dice_roll')
         roll_str = ""
-        if dice_roll and isinstance(dice_roll, dict):
-            roll_str = f" [**Dice Roll**: d{dice_roll.get('sides')} resulted in **{dice_roll.get('result')}**]"
+        if dice_roll and isinstance(dice_roll, dict) and dice_roll.get('main'):
+            main_roll = dice_roll['main']
+            roll_str = f" [**Dice Roll**: d{main_roll.get('sides')} resulted in **{main_roll.get('result')}**"
+            if dice_roll.get('multiplier'):
+                multiplier = dice_roll['multiplier']
+                roll_str += f", Multiplier: d{multiplier.get('sides')} → **{multiplier.get('result')}**"
+            roll_str += "]"
 
         turn_summary.append(f"- **{player_name}**: {action}{roll_str}")
 

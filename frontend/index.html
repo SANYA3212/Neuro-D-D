@@ -1537,6 +1537,7 @@
                 // Auto-close the modal after showing the result
                 setTimeout(() => {
                     modal.remove();
+                    render(); // Re-render the main UI to show the new dice state
                 }, 1500);
             });
         });
