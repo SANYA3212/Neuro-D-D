@@ -11,11 +11,11 @@
       --primary:#ff4500; --secondary:#8b0000; --background:#000000;
     }
     .dark body{ background-color:var(--background); }
-    /* Custom Scrollbar */
-    ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-track { background: #1a1a1a; }
-    ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--secondary); }
+    /* Custom Scrollbar for specific element */
+    .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--secondary); }
   </style>
 </head>
 <body class="min-h-screen">
@@ -268,6 +268,13 @@
 
             // ALL other messages are now full state updates
             if (message.room_code && message.players) {
+                // When a new full state arrives, it means a new turn is starting.
+                // If the game input field exists, clear it for the new turn.
+                const gameInput = document.getElementById('gameInput');
+                if (gameInput) {
+                    gameInput.value = '';
+                }
+
                 state.currentRoom = message;
                 state.sceneHistory = message.journal?.entries || [];
                 state.chatMessages = processJournal(message.journal, message.players);
@@ -883,7 +890,7 @@
 
               <div class="lg:col-span-2 space-y-6">
                 <div class="bg-black/50 rounded-xl overflow-hidden border border-gray-800">
-                  <div class="p-6 min-h-[500px]" id="sceneBox">
+                  <div class="p-6 min-h-[500px] custom-scrollbar" id="sceneBox" style="overflow-y: auto; max-height: 500px;">
                     ${state.sceneHistory.length===0?`<div class="text-center py-12 text-gray-500">${t('sceneDescription')}</div>`:
                       state.sceneHistory.map(scene=>`
                         <div class="mb-6 ${scene.role ==='assistant'?'text-gray-300':'text-white'}">
