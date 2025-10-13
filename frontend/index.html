@@ -952,12 +952,12 @@
                   <div class="flex items-center space-x-2">
                     <div data-testid="dice-roll-display" class="flex items-center space-x-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700">
                         <div class="text-center">
-                            <div class="text-xs text-gray-400">d${state.diceRoll.main ? state.diceRoll.main.sides : '—'}</div>
-                            <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll.main ? state.diceRoll.main.result : '—'}</div>
+                            <div class="text-xs text-gray-400">d${state.diceRoll && state.diceRoll.main ? state.diceRoll.main.sides : '—'}</div>
+                            <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll && state.diceRoll.main ? state.diceRoll.main.result : '—'}</div>
                         </div>
                         <div class="text-center">
                             <div class="text-xs text-gray-400">Множ.</div>
-                            <div class="font-bold text-xl text-cyan-400">${state.diceRoll.multiplier ? `x${state.diceRoll.multiplier.result}` : '—'}</div>
+                            <div class="font-bold text-xl text-cyan-400">${state.diceRoll && state.diceRoll.multiplier ? `x${state.diceRoll.multiplier.result}` : '—'}</div>
                         </div>
                     </div>
                     <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${isTurnReady ? 'disabled' : ''} value="${state.gameInputContent}" oninput="state.gameInputContent = this.value">

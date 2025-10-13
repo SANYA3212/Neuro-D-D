@@ -159,7 +159,12 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                         # We MUST trigger a state broadcast after this, so we set action_taken to True
                         action_taken = True
                     else:
-                        # Do not start the game if not all players are ready
+                        # Optional: Send an error message back to the host
+                        error_message = {
+                            "type": "error",
+                            "detail": "Not all players are ready."
+                        }
+                        await websocket.send_json(jsonable_encoder(error_message))
                         action_taken = False
                 else:
                     # Optional: Send an error message back to the user who is not the host
