@@ -131,6 +131,7 @@ class RoomDetailsResponse(BaseModel):
     players: List[PlayerInfo] = Field(default_factory=list)
     ready_players: List[str] = Field(default_factory=list) # Lobby ready state
     ready_players_turn: List[str] = Field(default_factory=list) # In-game turn ready state
+    player_turns: Dict[str, Any] = Field(default_factory=dict)
     campaign_id: Optional[str] = None
     campaign_meta: Optional[CampaignMeta] = None
     created_at: datetime

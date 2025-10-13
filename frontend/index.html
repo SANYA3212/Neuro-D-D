@@ -12,6 +12,10 @@
     }
     .dark body{ background-color:var(--background); }
     /* Custom Scrollbar for specific element */
+    .custom-scrollbar {
+      scrollbar-width: thin; /* For Firefox */
+      scrollbar-color: var(--primary) #1a1a1a; /* For Firefox */
+    }
     .custom-scrollbar::-webkit-scrollbar { width: 8px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 4px; }
@@ -936,6 +940,25 @@
                     <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all ${isTurnReady ? 'opacity-50 cursor-not-allowed' : ''}" ${isTurnReady ? 'disabled' : ''}>${t('ready')}</button>
                   </div>
                   <div id="hostControls" class="mt-4 text-right"></div>
+
+                  <!-- Player Actions Display -->
+                  <div id="playerActionsDisplay" class="mt-4 space-y-2">
+                    ${Object.entries(state.currentRoom?.player_turns || {}).map(([playerCode, turnData]) => {
+                        const player = state.currentRoom.players.find(p => p.user_code === playerCode);
+                        const playerName = player ? player.username : '...';
+                        let rollText = '';
+                        if (turnData.dice_roll) {
+                            rollText = ` <span class="font-bold text-gray-400">(d${turnData.dice_roll.sides} → ${turnData.dice_roll.result})</span>`;
+                        }
+                        return `
+                            <div class="text-sm p-2 bg-gray-800/50 rounded-lg">
+                                <span class="font-semibold text-[var(--primary)]">${playerName}:</span>
+                                <span class="text-gray-300">${turnData.action || '...'}</span>
+                                ${rollText}
+                            </div>
+                        `;
+                    }).join('')}
+                  </div>
                 </div>
               </div>
 
@@ -1303,8 +1326,7 @@
                             dice_roll: state.diceRoll
                         }));
                         // Now the UI will be disabled based on the state received from the server.
-                        // We still clear the diceRoll locally so the display disappears immediately.
-                        state.diceRoll = null;
+                        // The diceRoll will persist until the next turn starts (when a new state is received).
                     }
                 });
 
