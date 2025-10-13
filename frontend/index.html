@@ -11,6 +11,11 @@
       --primary:#ff4500; --secondary:#8b0000; --background:#000000;
     }
     .dark body{ background-color:var(--background); }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--secondary); }
   </style>
 </head>
 <body class="min-h-screen">
@@ -908,13 +913,19 @@
                     <button id="openDiceModalBtn" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">🎲</div><div>${t('rollCube')}</div></button>
                   </div>
                   <div class="flex items-center space-x-2">
-                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${isTurnReady ? 'disabled' : ''}>
                     ${state.diceRoll ? `
-                        <div data-testid="dice-roll-display" class="p-2 bg-gray-900/50 rounded-lg text-center border border-gray-700">
-                            <div class="text-xs text-gray-400">d${state.diceRoll.sides}</div>
-                            <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll.result}</div>
+                        <div data-testid="dice-roll-display" class="flex items-center space-x-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700">
+                            <div class="text-center">
+                                <div class="text-xs text-gray-400">d${state.diceRoll.sides}</div>
+                                <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll.result}</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-xs text-gray-400">Множ.</div>
+                                <div class="font-bold text-xl text-cyan-400">x1</div>
+                            </div>
                         </div>
                     ` : ''}
+                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${isTurnReady ? 'disabled' : ''}>
                     <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all ${isTurnReady ? 'opacity-50 cursor-not-allowed' : ''}" ${isTurnReady ? 'disabled' : ''}>${t('ready')}</button>
                   </div>
                   <div id="hostControls" class="mt-4 text-right"></div>
@@ -1311,7 +1322,7 @@
                         : 'bg-gray-600 hover:bg-gray-700'; // Make it always look clickable
                     hostControls.innerHTML = `
                         <button id="hostSendTurnBtn" class="${buttonClass} px-6 py-3 rounded-lg font-semibold transition-all">
-                            Отправить ход нейросети (${(state.currentRoom.ready_players_turn || []).length}/${state.currentRoom.players.length})
+                            Сделать ход (${(state.currentRoom.ready_players_turn || []).length}/${state.currentRoom.players.length})
                         </button>
                     `;
 

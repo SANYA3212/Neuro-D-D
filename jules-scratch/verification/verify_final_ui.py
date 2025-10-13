@@ -48,17 +48,17 @@ async def main():
             await expect(input_field).not_to_be_disabled()
             await expect(ready_button).not_to_be_disabled()
 
-            await input_field.fill("My test action")
+            await input_field.fill("My final test action")
 
             # 5. Click "Ready" and verify input is disabled and not cleared
             await ready_button.click()
 
             # Give it a moment for the state to update via WebSocket
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(1000) # Increased timeout for reliability
 
             await expect(input_field).to_be_disabled()
             await expect(ready_button).to_be_disabled()
-            await expect(input_field).to_have_value("My test action") # Check that it's not cleared
+            await expect(input_field).to_have_value("My final test action") # Check that it's not cleared
 
             # Dice display should be gone
             await expect(dice_display).not_to_be_visible()

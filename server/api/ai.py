@@ -68,10 +68,19 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         raise HTTPException(status_code=400, detail="No player turns to process.")
 
     try:
-        with open(config.SYSTEM_PROMPT_FILE, 'r', encoding='utf-8') as f:
-            system_prompt = f.read()
+        prompt_data = storage.read_json(config.SYSTEM_PROMPT_FILE)
+        if not prompt_data:
+            raise FileNotFoundError
+
+        system_prompt_parts = [
+            prompt_data.get("system_prompt", "You are a Game Master."),
+            "\n## Game Rules\n" + "\n".join(f"- {rule}" for rule in prompt_data.get("game_rules", [])),
+            "\n## Your Persona\n" + prompt_data.get("persona", {}).get("description", "You are Neuro DM.")
+        ]
+        system_prompt = "\n".join(system_prompt_parts)
+
     except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="System prompt file not found.")
+        raise HTTPException(status_code=500, detail="System prompt file (game_rule.json) not found or corrupted.")
 
     # 2. Construct the prompt from all player turns
     turn_summary = []
@@ -82,7 +91,7 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         dice_roll = turn_data.get('dice_roll')
         roll_str = ""
         if dice_roll and isinstance(dice_roll, dict):
-            roll_str = f" (бросок d{dice_roll.get('sides')} → {dice_roll.get('result')})"
+            roll_str = f" [**Dice Roll**: d{dice_roll.get('sides')} resulted in **{dice_roll.get('result')}**]"
 
         turn_summary.append(f"- **{player_name}**: {action}{roll_str}")
 

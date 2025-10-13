@@ -17,7 +17,7 @@ INDEX_FILE = DATA_DIR / "index.json"
 
 # Game Logic Prompts
 PROMPTS_DIR = ROOT_DIR / "server" / "game_logic" / "prompts"
-SYSTEM_PROMPT_FILE = PROMPTS_DIR / "system_prompt.txt"
+SYSTEM_PROMPT_FILE = ROOT_DIR / "game_promt" / "game_rule.json"
 EXAMPLES_FILE = PROMPTS_DIR / "examples.md"
 
 
