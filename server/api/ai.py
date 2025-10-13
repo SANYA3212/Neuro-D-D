@@ -123,7 +123,6 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         parsed_response = parse_ai_response(response.text)
         meta = parsed_response.meta
         state_changed = False
-        return parsed_response
 
         # --- Persist AI response to journal ---
         # This is critical for synchronization, as it saves the AI's narrative.
@@ -132,8 +131,24 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         if journal_data is not None:
             journal = CampaignJournal(**journal_data)
 
-            # Add user's message to journal
-            journal.entries.append(request.messages[-1])
+            # Add user's actions to journal
+            # We will create a consolidated message from all user actions
+            turn_summary = []
+            player_turns = room.get('player_turns', {})
+            for player_code, turn_data in player_turns.items():
+                player_profile = storage.get_user_profile_by_code(player_code)
+                player_name = player_profile.username if player_profile else "Unknown Player"
+                action = turn_data.get('action', 'does nothing.')
+                dice_roll = turn_data.get('dice_roll')
+                roll_str = ""
+                if dice_roll and isinstance(dice_roll, dict):
+                    roll_str = f" (бросок d{dice_roll.get('sides')} → {dice_roll.get('result')})"
+                turn_summary.append(f"{player_name}: {action}{roll_str}")
+
+            user_actions_content = "\n".join(turn_summary)
+            user_actions_message = Message(role='user', content=user_actions_content)
+            journal.entries.append(user_actions_message)
+
 
             # Add AI's message to journal
             assistant_message = Message(role='assistant', content=parsed_response.text)

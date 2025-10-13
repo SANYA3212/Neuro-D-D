@@ -851,7 +851,9 @@
           </div>
         </div>`; },
 
-      game(){ return `
+      game(){
+        const isTurnReady = state.currentRoom?.ready_players_turn?.includes(state.user?.user_code);
+        return `
         <div class="min-h-screen bg-[var(--background)] text-white relative">
           <div class="container mx-auto px-6 py-4">
             <div class="flex justify-between items-center mb-6">
@@ -879,9 +881,10 @@
                   <div class="p-6 min-h-[500px]" id="sceneBox">
                     ${state.sceneHistory.length===0?`<div class="text-center py-12 text-gray-500">${t('sceneDescription')}</div>`:
                       state.sceneHistory.map(scene=>`
-                        <div class="mb-6 ${scene.aiResponse?'text-[var(--primary)]':'text-white'}">
-                          <p class="text-lg leading-relaxed mb-4">${scene.content}</p>
-                          ${scene.image?`<img src="${scene.image}" alt="Сцена" class="w-full h-80 object-cover rounded-lg mb-4">`:''}
+                        <div class="mb-6 ${scene.role ==='assistant'?'text-gray-300':'text-white'}">
+                          <p class="font-bold text-lg mb-2 ${scene.role === 'assistant' ? 'text-[var(--primary)]' : 'text-cyan-400'}">${scene.role === 'assistant' ? 'Game Master' : 'Players'}</p>
+                          <p class="text-lg leading-relaxed whitespace-pre-wrap">${scene.content}</p>
+                          ${scene.image?`<img src="${scene.image}" alt="Сцена" class="w-full h-80 object-cover rounded-lg my-4">`:''}
                         </div>`).join('')}
                     ${state.isRolling?`
                       <div class="flex items-center space-x-2 text-[var(--primary)]">
@@ -905,14 +908,14 @@
                     <button id="openDiceModalBtn" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">🎲</div><div>${t('rollCube')}</div></button>
                   </div>
                   <div class="flex items-center space-x-2">
-                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${state.currentRoom?.ready_players_turn?.includes(state.user?.user_code) ? 'disabled' : ''}>
+                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${isTurnReady ? 'disabled' : ''}>
                     ${state.diceRoll ? `
                         <div data-testid="dice-roll-display" class="p-2 bg-gray-900/50 rounded-lg text-center border border-gray-700">
                             <div class="text-xs text-gray-400">d${state.diceRoll.sides}</div>
                             <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll.result}</div>
                         </div>
                     ` : ''}
-                    <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all" ${state.currentRoom?.ready_players_turn?.includes(state.user?.user_code) ? 'disabled' : ''}>${t('ready')}</button>
+                    <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all ${isTurnReady ? 'opacity-50 cursor-not-allowed' : ''}" ${isTurnReady ? 'disabled' : ''}>${t('ready')}</button>
                   </div>
                   <div id="hostControls" class="mt-4 text-right"></div>
                 </div>
