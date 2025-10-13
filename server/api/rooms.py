@@ -151,9 +151,24 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
             elif data.get("type") == "start_game":
                 room = storage.find_room_by_code(room_code)
                 if room and room.get('host_user_code') == user_code:
-                    storage.clear_turn_data(room_code) # Clear previous turn data on new game start
-                    await manager.broadcast({"type": "game_starting"}, room_code)
-                    action_taken = False # We've handled the broadcast, no need for another full state update
+                    # Re-fetch room details to ensure we have the latest ready_players list
+                    current_room_state = await get_room_details_logic(room_code)
+                    if current_room_state and set(p.user_code for p in current_room_state.players) == set(current_room_state.ready_players):
+                        storage.clear_turn_data(room_code) # Clear previous turn data on new game start
+                        await manager.broadcast({"type": "game_starting"}, room_code)
+                        # We MUST trigger a state broadcast after this, so we set action_taken to True
+                        action_taken = True
+                    else:
+                        # Do not start the game if not all players are ready
+                        action_taken = False
+                else:
+                    # Optional: Send an error message back to the user who is not the host
+                    error_message = {
+                        "type": "error",
+                        "detail": "Only the host can start the game."
+                    }
+                    await websocket.send_json(jsonable_encoder(error_message))
+                    action_taken = False
 
             elif data.get("type") == "player_turn_ready":
                 turn_data = {
