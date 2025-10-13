@@ -152,8 +152,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                 room = storage.find_room_by_code(room_code)
                 if room and room.get('host_user_code') == user_code:
                     storage.clear_turn_data(room_code) # Clear previous turn data on new game start
-                    action_taken = True
                     await manager.broadcast({"type": "game_starting"}, room_code)
+                    action_taken = False # We've handled the broadcast, no need for another full state update
 
             elif data.get("type") == "player_turn_ready":
                 turn_data = {
