@@ -306,7 +306,7 @@
             state.currentCampaign = newCampaign;
 
             // Now create a room associated with this campaign
-            const newRoom = await api.createRoom(true, newCampaign.name);
+            const newRoom = await api.createRoom(true, newCampaign.name, newCampaign.id);
             state.currentRoom = newRoom;
             storage.saveCurrentRoomCode(newRoom.room_code);
 
@@ -886,9 +886,11 @@
                 <div class="bg-black/50 rounded-xl p-6 border border-gray-800">
                   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
                     ${[
-                      { label:t('attack'), icon:'⚔️' }, { label:t('explore'), icon:'🔍' },
-                      { label:t('negotiate'), icon:'💬' }, { label:t('useItem'), icon:'🎒' },
-                    ].map(a=>`<button data-quick="${a.label}" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">${a.icon}</div><div>${a.label}</div></button>`).join('')}
+                      { label:t('attack'), icon:'⚔️', template: `Вы атакуете: ` },
+                      { label:t('explore'), icon:'🔍', template: `Вы исследуете: ` },
+                      { label:t('negotiate'), icon:'💬', template: `Вы ведете переговоры: ` },
+                      { label:t('useItem'), icon:'🎒', template: `Вы используете предмет: ` },
+                    ].map(a=>`<button data-action-template="${a.template}" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">${a.icon}</div><div>${a.label}</div></button>`).join('')}
                     <button id="openDiceModalBtn" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">🎲</div><div>${t('rollCube')}</div></button>
                   </div>
                   <div class="flex items-center space-x-2">
@@ -1270,12 +1272,12 @@
                 });
 
                 // Listeners for quick action buttons
-                document.querySelectorAll('[data-quick]').forEach(button => {
+                document.querySelectorAll('[data-action-template]').forEach(button => {
                     button.addEventListener('click', (e) => {
-                        const actionTemplate = e.currentTarget.dataset.quick;
+                        const actionTemplate = e.currentTarget.dataset.actionTemplate;
                         const input = document.getElementById('gameInput');
                         if (input) {
-                            input.value = `${actionTemplate}: `;
+                            input.value = actionTemplate;
                             input.focus();
                         }
                     });
@@ -1431,6 +1433,11 @@
                     <div class="text-sm text-gray-400">Вы бросили d${sides}</div>
                     <div class="text-5xl font-bold text-[var(--primary)] my-2">${result}</div>
                 `;
+
+                // Auto-close the modal after showing the result
+                setTimeout(() => {
+                    modal.remove();
+                }, 1500);
             });
         });
 

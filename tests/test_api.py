@@ -52,6 +52,15 @@ def test_room(session_users, test_campaign):
     return response.json()["room_code"]
 
 
+async def drain_websockets(*sockets):
+    """Reads and discards all pending messages from a list of websockets."""
+    for ws in sockets:
+        while True:
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=0.1)
+            except asyncio.TimeoutError:
+                break
+
 @pytest.mark.asyncio
 async def test_full_lobby_synchronization(session_users, test_campaign, test_room):
     """
@@ -62,30 +71,34 @@ async def test_full_lobby_synchronization(session_users, test_campaign, test_roo
     room_code = test_room
     campaign_id = test_campaign
 
-    # 1. User 2 joins the room via HTTP
-    headers = {"X-User-Code": user2_code}
-    payload = {"room_code": room_code}
-    response = requests.post(f"{BASE_URL}/api/rooms/join", json=payload, headers=headers)
-    assert response.status_code == 200
-    await asyncio.sleep(0.1)
-
     uri1 = f"ws://127.0.0.1:8000/api/rooms/ws/{room_code}/{user1_code}"
     uri2 = f"ws://127.0.0.1:8000/api/rooms/ws/{room_code}/{user2_code}"
 
     async with websockets.connect(uri1) as ws1, websockets.connect(uri2) as ws2:
-        # After User 2 connects, both clients should receive the updated state
-        state1 = json.loads(await ws1.recv())
-        state2 = json.loads(await ws2.recv())
+        # We expect two messages on connect: one direct, one broadcast. Drain them.
+        await asyncio.sleep(0.1) # give time for broadcasts to arrive
+        await drain_websockets(ws1, ws2)
 
-        assert len(state1['players']) == 2
-        assert state1['room_code'] == room_code
-        assert state1 == state2, "Initial states for both users should be identical after User 2 joins."
+        # 1. User 2 joins the room via HTTP
+        headers = {"X-User-Code": user2_code}
+        payload = {"room_code": room_code}
+        response = requests.post(f"{BASE_URL}/api/rooms/join", json=payload, headers=headers)
+        assert response.status_code == 200
+
+        # Now, a broadcast should be sent. Both clients should receive the *same* new state.
+        state1_after_join = json.loads(await ws1.recv())
+        state2_after_join = json.loads(await ws2.recv())
+
+        assert len(state1_after_join['players']) == 2
+        assert state1_after_join == state2_after_join
 
         # 2. User 2 gets ready
+        await drain_websockets(ws1, ws2) # Clean up any lingering messages
         await ws2.send(json.dumps({"type": "player_ready"}))
-        await asyncio.sleep(0.1)
-        state1 = json.loads(await ws1.recv())
-        state2 = json.loads(await ws2.recv())
 
-        assert user2_code in state1['ready_players']
-        assert state1 == state2, "States should be identical after User 2 readies up."
+        # Both should receive the exact same update
+        state1_after_ready = json.loads(await ws1.recv())
+        state2_after_ready = json.loads(await ws2.recv())
+
+        assert user2_code in state1_after_ready['ready_players']
+        assert state1_after_ready == state2_after_ready, "States should be identical after User 2 readies up."

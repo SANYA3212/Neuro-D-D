@@ -89,6 +89,10 @@ async def join_room(
             campaign_meta.player_states[user_code] = PlayerState()
             storage.update_campaign_meta(host_user_code, room.campaign_id, campaign_meta.dict())
 
+    # After a player joins, broadcast the new state to everyone in the room
+    # This ensures clients that are already connected via WebSocket get the update.
+    await broadcast_full_room_state(room.room_code)
+
     return {"message": "Successfully joined room", "room_code": request.room_code.upper()}
 
 
@@ -103,6 +107,7 @@ async def get_room_details(room_code: str):
 
 async def broadcast_full_room_state(room_code: str):
     """Fetches the full room state and broadcasts it to all clients in the room."""
+    print(f"Broadcasting to room {room_code}") # DEBUG
     updated_state = await get_room_details_logic(room_code)
     if updated_state:
         await manager.broadcast(jsonable_encoder(updated_state), room_code)
@@ -111,6 +116,7 @@ async def broadcast_full_room_state(room_code: str):
 async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: str):
     """WebSocket endpoint for real-time communication within a room."""
     await manager.connect(websocket, room_code)
+    print(f"WS connection open for {user_code} in {room_code}") # DEBUG
 
     # 1. Send the full state to the connecting user
     initial_state = await get_room_details_logic(room_code)
@@ -138,7 +144,9 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
 
             elif data.get("type") == "player_ready":
                 storage.toggle_player_ready(room_code, user_code)
-                action_taken = True
+                # This is a state-changing event, so we must broadcast.
+                await broadcast_full_room_state(room_code)
+                action_taken = False # We've already handled the broadcast for this action
 
             elif data.get("type") == "start_game":
                 room = storage.find_room_by_code(room_code)
@@ -171,6 +179,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                 await broadcast_full_room_state(room_code)
 
     except WebSocketDisconnect:
+        print(f"WS connection closed for {user_code} in {room_code}") # DEBUG
         manager.disconnect(websocket, room_code)
         # Remove player from the room's list in storage
         storage.remove_player_from_room(room_code, user_code)
