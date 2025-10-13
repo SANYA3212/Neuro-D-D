@@ -905,8 +905,14 @@
                     <button id="openDiceModalBtn" class="p-3 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-gray-800 hover:bg-gray-700"><div class="text-lg mb-1">🎲</div><div>${t('rollCube')}</div></button>
                   </div>
                   <div class="flex items-center space-x-2">
-                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3">
-                    <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all">${t('ready')}</button>
+                    <input id="gameInput" type="text" placeholder="${t('enterAction')}" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3" ${state.currentRoom?.ready_players_turn?.includes(state.user?.user_code) ? 'disabled' : ''}>
+                    ${state.diceRoll ? `
+                        <div data-testid="dice-roll-display" class="p-2 bg-gray-900/50 rounded-lg text-center border border-gray-700">
+                            <div class="text-xs text-gray-400">d${state.diceRoll.sides}</div>
+                            <div class="font-bold text-xl text-[var(--primary)]">${state.diceRoll.result}</div>
+                        </div>
+                    ` : ''}
+                    <button id="playerReadyBtn" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-all" ${state.currentRoom?.ready_players_turn?.includes(state.user?.user_code) ? 'disabled' : ''}>${t('ready')}</button>
                   </div>
                   <div id="hostControls" class="mt-4 text-right"></div>
                 </div>
@@ -1275,10 +1281,9 @@
                             action: input.value,
                             dice_roll: state.diceRoll
                         }));
-                        // Disable the button after readying up
-                        document.getElementById('playerReadyBtn').disabled = true;
-                        document.getElementById('playerReadyBtn').classList.add('opacity-50', 'cursor-not-allowed');
-                        state.diceRoll = null; // Clear dice roll after submitting turn
+                        // Now the UI will be disabled based on the state received from the server.
+                        // We still clear the diceRoll locally so the display disappears immediately.
+                        state.diceRoll = null;
                     }
                 });
 
@@ -1410,8 +1415,16 @@
               <h3 class="text-2xl font-semibold">${t('rollCube')}</h3>
               <button class="text-gray-400 hover:text-white text-2xl" data-close>×</button>
             </div>
-            <div class="grid grid-cols-3 sm:grid-cols-4 gap-4 mb-6 text-center">
-              ${dice.map(d => `
+            <div class="grid grid-cols-4 gap-4 mb-4 text-center">
+              ${dice.slice(0, 4).map(d => `
+                <button data-dice="${d.sides}" title="${d.desc}" class="p-4 bg-gray-800 hover:bg-gray-700 rounded-lg font-bold text-lg transition-all aspect-square flex flex-col justify-center items-center">
+                  d${d.sides}
+                  <span class="text-xs font-normal text-gray-400">${d.sides === 100 ? '(d%)' : ''}</span>
+                </button>
+              `).join('')}
+            </div>
+            <div class="grid grid-cols-3 gap-4 mb-6 text-center justify-center">
+              ${dice.slice(4).map(d => `
                 <button data-dice="${d.sides}" title="${d.desc}" class="p-4 bg-gray-800 hover:bg-gray-700 rounded-lg font-bold text-lg transition-all aspect-square flex flex-col justify-center items-center">
                   d${d.sides}
                   <span class="text-xs font-normal text-gray-400">${d.sides === 100 ? '(d%)' : ''}</span>
