@@ -250,6 +250,17 @@
                 return;
             }
 
+            if (message.type === 'error') {
+                state.chatMessages.push({
+                    id: Date.now(),
+                    text: `Ошибка от сервера: ${message.detail}`,
+                    sender: 'system',
+                    timestamp: new Date().toLocaleTimeString()
+                });
+                render();
+                return;
+            }
+
             // ALL other messages are now full state updates
             if (message.room_code && message.players) {
                 state.currentRoom = message;
@@ -1289,20 +1300,19 @@
                     const allPlayersReady = state.currentRoom.players.length === (state.currentRoom.ready_players_turn || []).length;
                     const buttonClass = allPlayersReady
                         ? 'bg-blue-600 hover:bg-blue-700'
-                        : 'bg-gray-600 cursor-not-allowed opacity-50';
+                        : 'bg-gray-600 hover:bg-gray-700'; // Make it always look clickable
                     hostControls.innerHTML = `
                         <button id="hostSendTurnBtn" class="${buttonClass} px-6 py-3 rounded-lg font-semibold transition-all">
                             Отправить ход нейросети (${(state.currentRoom.ready_players_turn || []).length}/${state.currentRoom.players.length})
                         </button>
                     `;
 
-                    if (allPlayersReady) {
-                        addListener('hostSendTurnBtn', 'click', () => {
-                            if (state.ws) {
-                                state.ws.send(JSON.stringify({ type: 'host_send_turn' }));
-                            }
-                        });
-                    }
+                    // Always add the listener
+                    addListener('hostSendTurnBtn', 'click', () => {
+                        if (state.ws) {
+                            state.ws.send(JSON.stringify({ type: 'host_send_turn' }));
+                        }
+                    });
                 }
                 break;
 

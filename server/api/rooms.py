@@ -166,12 +166,22 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
             elif data.get("type") == "host_send_turn":
                 room = storage.find_room_by_code(room_code)
                 if room and room.get('host_user_code') == user_code:
-                    # This triggers the AI call, which itself will save the journal
-                    # and handle state changes.
-                    await _get_ai_completion_logic(room_code, user_code)
-                    # After the AI has processed and state has been updated,
-                    # we broadcast the new state.
-                    action_taken = True
+                    try:
+                        # This triggers the AI call, which itself will save the journal
+                        # and handle state changes.
+                        await _get_ai_completion_logic(room_code, user_code)
+                        # After the AI has processed and state has been updated,
+                        # we broadcast the new state.
+                        action_taken = True
+                    except HTTPException as e:
+                        # If the AI logic raises a known error (like no turns),
+                        # send it as a specific WS message instead of crashing.
+                        error_message = {
+                            "type": "error",
+                            "detail": e.detail
+                        }
+                        await manager.broadcast(jsonable_encoder(error_message), room_code)
+                        action_taken = False
 
 
             if action_taken:
