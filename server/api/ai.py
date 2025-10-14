@@ -2,6 +2,7 @@ import re
 import json
 import google.generativeai as genai
 from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi.encoders import jsonable_encoder
 
 from server.core import config, storage
 from server.core.connections import manager

@@ -955,9 +955,6 @@
                 <h1 class="text-2xl font-bold">${state.currentRoom?.name || t('campaignName')}</h1>
               </div>
               <div class="flex items-center space-x-4">
-                <button id="toggleMute" class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-800 hover:bg-gray-700 transition-colors" title="${state.isMuted?t('unmute'):t('mute')}">${state.isMuted?'🔇':'🔊'}</button>
-                <button id="toggleMic" class="w-10 h-10 rounded-full flex items-center justify-center ${state.isMicrophoneActive?'bg-red-600':'bg-gray-800 hover:bg-gray-700'} transition-colors" title="${state.isMicrophoneActive?t('microphoneOn'):t('microphoneOff')}">🎤</button>
-                <button id="openSettings" class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-800 hover:bg-gray-700 transition-colors" title="${t('settings')}">⚙️</button>
               </div>
             </div>
 
