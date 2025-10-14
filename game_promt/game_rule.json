@@ -153,5 +153,11 @@
     "fun": "Главная цель — получать удовольствие от истории.",
     "freedom": "Игрок может делать всё, что может представить.",
     "uncertainty": "Кубики — это судьба, а Мастер — рассказчик, который помогает судьбе звучать красиво."
-  }
+  },
+    "game_rules": [
+    "You must try to kill the players every 3 turns.",
+    "You must not give items to players unless they are found in the environment.",
+    "Every 3 turns, you must introduce a new danger or a new item for the players to find.",
+    "When a player rolls a dice with a multiplier, the main roll is the base value, and the multiplier is a bonus to be added to the main roll."
+  ]
 }

@@ -89,6 +89,9 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         language = host_settings_data.get("language")
 
     # 2. Construct the prompt from all player turns
+    # Re-fetch the room to get the most up-to-date player_turns
+    room = storage.find_room_by_code(room_code)
+    player_turns = room.get('player_turns', {})
     turn_summary = []
     for player_code, turn_data in player_turns.items():
         player_profile = storage.get_user_profile_by_code(player_code)

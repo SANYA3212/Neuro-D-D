@@ -1433,6 +1433,12 @@
                         }
                     });
                 }
+                // Scroll chat and scene to bottom after render
+                setTimeout(() => {
+                    scrollToBottom('chatBox');
+                    scrollToBottom('sceneBox');
+                    scrollToBottom('lobbyChatBox');
+                }, 0);
                 break;
 
             case 'settings':
@@ -1699,6 +1705,13 @@
     function qs(sel,root=document){ return root.querySelector(sel); }
     function on(id,evt,handler){ const el=document.getElementById(id); if(el) el.addEventListener(evt,handler); }
     function onIn(root,sel,evt,handler){ const el=qs(sel,root); if(el) el.addEventListener(evt,handler); }
+
+    function scrollToBottom(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.scrollTop = element.scrollHeight;
+        }
+    }
 
     function renderFoundItem() {
         const lastMessage = state.sceneHistory[state.sceneHistory.length - 1];
