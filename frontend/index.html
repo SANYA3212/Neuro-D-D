@@ -293,6 +293,21 @@
 
             // ALL other messages are now full state updates
             if (message.room_code && message.players) {
+                // --- Typing Effect Logic for WebSocket ---
+                const oldHistory = state.sceneHistory || [];
+                const newHistory = message.journal?.entries || [];
+                let newAssistantMessage = null;
+                let tempContent = null; // To hold the message text
+
+                if (newHistory.length > oldHistory.length) {
+                    const lastNewMessage = newHistory[newHistory.length - 1];
+                    // A simple check: is the last message new and from the assistant?
+                    const isAlreadyPresent = oldHistory.some(m => m.content === lastNewMessage.content && m.role === lastNewMessage.role);
+                    if (lastNewMessage.role === 'assistant' && !isAlreadyPresent) {
+                       newAssistantMessage = lastNewMessage;
+                    }
+                }
+
                 // Smart-clear input field logic
                 const currentUserCode = state.user?.user_code;
                 const oldRoomState = state.currentRoom;
@@ -302,7 +317,18 @@
 
                 // Update state
                 state.currentRoom = message;
-                state.sceneHistory = message.journal?.entries || [];
+
+                // If we have a new message to animate, handle it specially
+                if (newAssistantMessage) {
+                    const messageId = `ai-ws-msg-${Date.now()}`;
+                    newAssistantMessage.id = messageId; // Assign a temporary ID for rendering
+                    tempContent = newAssistantMessage.content;
+                    newAssistantMessage.content = ''; // Clear content for placeholder
+                    state.sceneHistory = newHistory;
+                } else {
+                    state.sceneHistory = newHistory; // Otherwise, update as normal
+                }
+
 
                 // Check if the user is NOT ready in the new state
                 const isNotReadyAnymore = !state.currentRoom?.ready_players_turn?.includes(currentUserCode);
@@ -322,6 +348,24 @@
                 // Re-render if we are on a page that displays this info
                 if (state.currentPage === 'lobby' || state.currentPage === 'game') {
                     render();
+                    // If we rendered a placeholder, now we animate it
+                    if (newAssistantMessage && tempContent) {
+                        const aiMessageContainer = document.getElementById(newAssistantMessage.id);
+                        if (aiMessageContainer) {
+                            simulateTyping(aiMessageContainer, tempContent, () => {
+                                // Restore the content in the state object after animation
+                                const finalMessage = state.sceneHistory.find(m => m.id === newAssistantMessage.id);
+                                if (finalMessage) {
+                                    finalMessage.content = tempContent;
+                                }
+                            });
+                        } else {
+                           // Fallback if the element wasn't found
+                           const finalMessage = state.sceneHistory.find(m => m.id === newAssistantMessage.id);
+                           if(finalMessage) finalMessage.content = tempContent;
+                           render(); // Re-render with the full content
+                        }
+                    }
                 }
             } else {
                 console.log("Received unhandled WS message:", message);

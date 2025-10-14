@@ -159,6 +159,8 @@
         "If a player's action is empty, you must narrate that they are standing still or doing nothing.",
         "When a player's HP reaches 0, you must describe their state and that they must be resurrected by an ally.",
         "Items must only be given by the Game Master based on the environment and context, not created out of thin air by players.",
-        "Dice Multiplier: The final result of a roll with a multiplier is the main roll's result MULTIPLIED BY the multiplier roll's result. This is a critical rule."
+        "Dice Multiplier: The final result of a roll with a multiplier is the main roll's result MULTIPLIED BY the multiplier roll's result. This is a critical rule.",
+        "Пиши все числа прописью (например, «три» вместо «3»).",
+        "Используй только кириллицу. Латинские буквы запрещены."
     ]
 }
