@@ -205,20 +205,15 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                             await manager.broadcast(jsonable_encoder(error_message), room_code)
                             action_taken = False
                     else:
-                        error_message = {
-                            "type": "error",
-                            "detail": "Not all players are ready for the turn."
-                        }
-                        # Find the campaign to log the error to the journal
+                        # Log to journal and broadcast, but don't send a direct error message
                         room_details = await get_room_details_logic(room_code)
                         if room_details and room_details.campaign_id:
                             storage.add_lobby_chat_message(
                                 room_details.host_user_code,
                                 room_details.campaign_id,
-                                Message(role='system', content=f"Host tried to advance turn, but not all players were ready.")
+                                Message(role='system', content="Host tried to advance turn, but not all players were ready.")
                             )
-                        await websocket.send_json(jsonable_encoder(error_message))
-                        action_taken = True # Broadcast the updated journal
+                            action_taken = True # Triggers a broadcast of the updated journal
 
 
             if action_taken:

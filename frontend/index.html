@@ -1225,22 +1225,6 @@
 
         // --- Page-Specific Logic ---
         switch (state.currentPage) {
-            case 'lobby':
-            case 'game':
-                // After the main render, find the last chat message and apply typing effect if it's new
-                setTimeout(() => {
-                    const lastMsg = state.chatMessages[state.chatMessages.length - 1];
-                    if (lastMsg && !lastMsg.isRendered) {
-                        const el = document.getElementById(`chat-msg-${lastMsg.id}`);
-                        if (el) {
-                            lastMsg.isRendered = true; // Mark as rendered to prevent re-animation
-                            simulateTyping(el, lastMsg.text, null, true);
-                        }
-                    }
-                }, 0);
-                break;
-        }
-        switch (state.currentPage) {
             case 'login':
                 const loginForm = document.getElementById('loginForm');
                 if (loginForm) loginForm.addEventListener('submit', (e) => { e.preventDefault(); handleLogin(loginForm); });
