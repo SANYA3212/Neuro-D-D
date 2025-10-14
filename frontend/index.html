@@ -31,6 +31,14 @@
     .player-action-enter {
       animation: fadeIn 0.5s ease-out;
     }
+    @keyframes charFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    .char-fade-in {
+        display: inline-block;
+        animation: charFadeIn 0.3s ease-in-out;
+    }
   </style>
 </head>
 <body class="min-h-screen">
@@ -523,15 +531,21 @@
     }
     function simulateTyping(element, text, onComplete) {
         let i = 0;
-        const speed = 20; // Lower is faster
+        const speed = 50; // 1000ms / 20 chars = 50ms/char
         element.innerHTML = ''; // Clear the container
 
         function type() {
             if (i < text.length) {
-                element.innerHTML += text.charAt(i);
+                const char = text.charAt(i);
+                const span = document.createElement('span');
+                span.className = 'char-fade-in';
+                span.textContent = char;
+                element.appendChild(span);
                 i++;
                 setTimeout(type, speed);
             } else if (onComplete) {
+                // Once done, replace the animated spans with the final parsed markdown
+                element.innerHTML = marked.parse(text);
                 onComplete();
             }
         }
@@ -956,7 +970,7 @@
                       state.sceneHistory.map(scene=>`
                         <div class="mb-6 ${scene.role ==='assistant'?'text-gray-300':'text-white'}">
                           <p class="font-bold text-lg mb-2 ${scene.role === 'assistant' ? 'text-[var(--primary)]' : 'text-cyan-400'}">${scene.role === 'assistant' ? 'Game Master' : 'Players'}</p>
-                          <div class="text-lg leading-relaxed whitespace-pre-wrap prose prose-invert max-w-none">${marked.parse(scene.content)}</div>
+                          <div id="${scene.id || ''}" class="text-lg leading-relaxed whitespace-pre-wrap prose prose-invert max-w-none">${marked.parse(scene.content)}</div>
                           ${scene.image?`<img src="${scene.image}" alt="Сцена" class="w-full h-80 object-cover rounded-lg my-4">`:''}
                         </div>`).join('')}
                     ${state.isRolling?`
