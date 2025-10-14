@@ -529,10 +529,10 @@
         render();
       },1000);
     }
-    function simulateTyping(element, text, onComplete) {
+    function simulateTyping(element, text, onComplete, isMarkdown = true) {
         let i = 0;
-        const speed = 50; // 1000ms / 20 chars = 50ms/char
-        element.innerHTML = ''; // Clear the container
+        const speed = 50; // 20 chars per second
+        element.innerHTML = '';
 
         function type() {
             if (i < text.length) {
@@ -542,11 +542,16 @@
                 span.textContent = char;
                 element.appendChild(span);
                 i++;
+                scrollToBottom(element.id); // Scroll as text is added
                 setTimeout(type, speed);
-            } else if (onComplete) {
-                // Once done, replace the animated spans with the final parsed markdown
-                element.innerHTML = marked.parse(text);
-                onComplete();
+            } else {
+                if (isMarkdown) {
+                    element.innerHTML = marked.parse(text);
+                } else {
+                    element.textContent = text;
+                }
+                scrollToBottom(element.id);
+                if (onComplete) onComplete();
             }
         }
         type();
@@ -915,12 +920,12 @@
                     </div>
                     <div>
                       <h3 class="text-lg font-semibold mb-3">${t('chat')}</h3>
-                      <div id="lobbyChatBox" class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto">
+                  <div id="lobbyChatBox" class="bg-gray-800/50 rounded-lg h-48 p-4 mb-3 overflow-y-auto custom-scrollbar">
                         <div class="space-y-3 text-sm prose prose-invert max-w-none">
                           ${state.chatMessages.map(msg=>`
                             <div class="${msg.sender==='system'?'text-[var(--primary)] italic':''}">
                               ${msg.sender!=='system'?`<div class="font-semibold text-[var(--primary)]">${msg.sender}</div>`:''}
-                              <div>${marked.parse(msg.text)}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
+                              <div id="chat-msg-${msg.id}" class="chat-message">${marked.parse(msg.text)}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
                             </div>`).join('')}
                         </div>
                       </div>
@@ -1019,7 +1024,13 @@
                         const playerName = player ? player.username : '...';
                         let rollText = '';
                         if (turnData.dice_roll && turnData.dice_roll.main) {
-                            rollText = ` <span class="font-bold text-gray-400">(d${turnData.dice_roll.main.sides} → ${turnData.dice_roll.main.result})</span>`;
+                            let result = turnData.dice_roll.main.result;
+                            rollText = ` <span class="font-bold text-gray-400">(d${turnData.dice_roll.main.sides} → ${result}`;
+                            if (turnData.dice_roll.multiplier) {
+                                result *= turnData.dice_roll.multiplier.result;
+                                rollText += ` * d${turnData.dice_roll.multiplier.sides} → ${turnData.dice_roll.multiplier.result} = ${result}`;
+                            }
+                            rollText += `)</span>`;
                         }
                         return `
                             <div class="text-sm p-2 bg-gray-800/50 rounded-lg player-action-enter">
@@ -1041,7 +1052,7 @@
                       ${state.chatMessages.map(msg=>`
                         <div class="${msg.sender==='system'?'text-[var(--primary)] italic':''}">
                           ${msg.sender!=='system'?`<div class="font-semibold text-[var(--primary)]">${msg.sender}</div>`:''}
-                          <div>${marked.parse(msg.text)}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
+                          <div id="chat-msg-${msg.id}" class="chat-message">${marked.parse(msg.text)}</div><div class="text-xs text-gray-500">${msg.timestamp}</div>
                         </div>`).join('')}
                     </div>
                   </div>
@@ -1216,6 +1227,22 @@
         addListener('back', 'click', () => go('landing'));
 
         // --- Page-Specific Logic ---
+        switch (state.currentPage) {
+            case 'lobby':
+            case 'game':
+                // After the main render, find the last chat message and apply typing effect if it's new
+                setTimeout(() => {
+                    const lastMsg = state.chatMessages[state.chatMessages.length - 1];
+                    if (lastMsg && !lastMsg.isRendered) {
+                        const el = document.getElementById(`chat-msg-${lastMsg.id}`);
+                        if (el) {
+                            lastMsg.isRendered = true; // Mark as rendered to prevent re-animation
+                            simulateTyping(el, lastMsg.text, null, true);
+                        }
+                    }
+                }, 0);
+                break;
+        }
         switch (state.currentPage) {
             case 'login':
                 const loginForm = document.getElementById('loginForm');

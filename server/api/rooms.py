@@ -193,9 +193,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                             # This triggers the AI call, which itself will save the journal
                             # and handle state changes.
                             await _get_ai_completion_logic(room_code, user_code)
-                            # After the AI has processed and state has been updated,
-                            # we broadcast the new state.
-                            action_taken = True
+                            # The AI logic now handles clearing turns and broadcasting the final state.
+                            action_taken = False
                         except HTTPException as e:
                             # If the AI logic raises a known error (like no turns),
                             # send it as a specific WS message instead of crashing.
@@ -210,8 +209,16 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                             "type": "error",
                             "detail": "Not all players are ready for the turn."
                         }
+                        # Find the campaign to log the error to the journal
+                        room_details = await get_room_details_logic(room_code)
+                        if room_details and room_details.campaign_id:
+                            storage.add_lobby_chat_message(
+                                room_details.host_user_code,
+                                room_details.campaign_id,
+                                Message(role='system', content=f"Host tried to advance turn, but not all players were ready.")
+                            )
                         await websocket.send_json(jsonable_encoder(error_message))
-                        action_taken = False
+                        action_taken = True # Broadcast the updated journal
 
 
             if action_taken:

@@ -101,11 +101,13 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         roll_str = ""
         if dice_roll and isinstance(dice_roll, dict) and dice_roll.get('main'):
             main_roll = dice_roll['main']
-            roll_str = f" [**Dice Roll**: d{main_roll.get('sides')} resulted in **{main_roll.get('result')}**"
+            final_result = main_roll.get('result', 1)
+            roll_str = f" [**Dice Roll**: d{main_roll.get('sides')} → **{main_roll.get('result')}**"
             if dice_roll.get('multiplier'):
                 multiplier = dice_roll['multiplier']
-                roll_str += f", Multiplier: d{multiplier.get('sides')} → **{multiplier.get('result')}**"
-            roll_str += "]"
+                final_result *= multiplier.get('result', 1)
+                roll_str += f" * d{multiplier.get('sides')} → **{multiplier.get('result')}**"
+            roll_str += f" = **{final_result}**]"
 
         turn_summary.append(f"- **{player_name}**: {action}{roll_str}")
 
@@ -127,7 +129,22 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
     journal = storage.get_campaign_journal(host_user_code, campaign_id)
     history = journal.entries[-20:] if journal else []
 
-    messages_for_ai = [Message(role="system", content=full_prompt_context)] + history
+    # --- Pre-computation and Journaling BEFORE AI call ---
+    # Log the user's consolidated actions to the journal first.
+    # This ensures the history is up-to-date for the AI call itself.
+    journal_path = storage.get_campaign_journal_file(campaign_meta.host_user_code, str(campaign_meta.id))
+    if journal_path:
+        journal_data = storage.read_json(journal_path) or {}
+        journal = CampaignJournal(**journal_data)
+
+        user_actions_content = "\n".join(turn_summary)
+        user_actions_message = Message(role='user', content=user_actions_content)
+        journal.entries.append(user_actions_message)
+
+        storage.write_json(journal_path, journal.dict())
+
+        # Update history for the AI call
+        history = journal.entries[-20:]
 
     # 3. Call Gemini API
     try:
@@ -140,9 +157,6 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
 
         response = model.generate_content("\n".join(final_prompt_list))
 
-        # After getting a response, clear the turn data for the next round
-        storage.clear_turn_data(room_code)
-
         # 4. Parse and process response
         parsed_response = parse_ai_response(response.text)
         meta = parsed_response.meta
@@ -154,26 +168,6 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         journal_data = storage.read_json(journal_path)
         if journal_data is not None:
             journal = CampaignJournal(**journal_data)
-
-            # Add user's actions to journal
-            # We will create a consolidated message from all user actions
-            turn_summary = []
-            player_turns = room.get('player_turns', {})
-            for player_code, turn_data in player_turns.items():
-                player_profile = storage.get_user_profile_by_code(player_code)
-                player_name = player_profile.username if player_profile else "Unknown Player"
-                action = turn_data.get('action', 'does nothing.')
-                dice_roll = turn_data.get('dice_roll')
-                roll_str = ""
-                if dice_roll and isinstance(dice_roll, dict) and dice_roll.get('main'):
-                    main_roll = dice_roll['main']
-                    roll_str = f" (бросок d{main_roll.get('sides')} → {main_roll.get('result')})"
-                turn_summary.append(f"{player_name}: {action}{roll_str}")
-
-            user_actions_content = "\n".join(turn_summary)
-            user_actions_message = Message(role='user', content=user_actions_content)
-            journal.entries.append(user_actions_message)
-
 
             # Add AI's message to journal
             assistant_message = Message(role='assistant', content=parsed_response.text)
@@ -209,13 +203,16 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
             # Save the metadata changes (HP, inventory)
             storage.update_campaign_meta(campaign_meta.host_user_code, str(campaign_meta.id), campaign_meta.dict())
 
-            # Find the room and broadcast the all-inclusive update
-            room = storage.find_room_by_campaign_id(str(campaign_meta.id))
-            if room:
-                print(f"BROADCASTING state update to room {room['room_code']} due to state change.")
-                updated_room_details = await get_room_details_logic(room['room_code'])
-                if updated_room_details:
-                    await manager.broadcast(updated_room_details.dict(), room['room_code'])
+        # After processing, clear the turn data for the next round
+        storage.clear_turn_data(room_code)
+
+        # Always broadcast the final state after a turn is processed.
+        room = storage.find_room_by_campaign_id(str(campaign_meta.id))
+        if room:
+            print(f"BROADCASTING final state to room {room['room_code']}.")
+            updated_room_details = await get_room_details_logic(room['room_code'])
+            if updated_room_details:
+                await manager.broadcast(jsonable_encoder(updated_room_details), room['room_code'])
 
         return parsed_response
 

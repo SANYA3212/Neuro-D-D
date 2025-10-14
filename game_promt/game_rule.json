@@ -155,9 +155,10 @@
     "uncertainty": "Кубики — это судьба, а Мастер — рассказчик, который помогает судьбе звучать красиво."
   },
     "game_rules": [
-    "You must try to kill the players every 3 turns.",
-    "You must not give items to players unless they are found in the environment.",
-    "Every 3 turns, you must introduce a new danger or a new item for the players to find.",
-    "When a player rolls a dice with a multiplier, the main roll is the base value, and the multiplier is a bonus to be added to the main roll."
-  ]
+        "Every 3 turns, you must introduce a new danger or a new item for the players to find, but do not announce it like 'After 3 turns...'.",
+        "If a player's action is empty, you must narrate that they are standing still or doing nothing.",
+        "When a player's HP reaches 0, you must describe their state and that they must be resurrected by an ally.",
+        "Items must only be given by the Game Master based on the environment and context, not created out of thin air by players.",
+        "Dice Multiplier: The final result of a roll with a multiplier is the main roll's result MULTIPLIED BY the multiplier roll's result. This is a critical rule."
+    ]
 }
