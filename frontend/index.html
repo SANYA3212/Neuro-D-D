@@ -63,7 +63,10 @@
       chatMessages: [],
       ws: null,
       gameInputContent: "", // Persist user input across re-renders
+      audioVolume: 100, // Volume for TTS, from 0 to 100
     };
+
+    let _audioPlayer = null; // Will hold the Audio object for TTS playback
 
     function processJournal(journal, players) {
         if (!journal || !journal.lobby_chat) return [];
@@ -173,11 +176,12 @@
         welcomeBack:"Добро пожаловать обратно", createYourAccount:"Создайте свой аккаунт", or:"или", rolled:"бросил",
         error:"Ошибка", you:"Вы", system:"Система", message:"Сообщение...", youJoined:"Вы присоединились к комнате",
         initiative:"Инициатива", changeAvatar:"Изменить аватар", changeUsername:"Изменить ник", activeMember:"Активный участник",
-        statistics:"Статистика", sound:"Звук", mainVolume:"Основной звук", effectsVolume:"Эффекты",
+        statistics:"Статистика", sound:"Звук", mainVolume:"Громкость озвучки", effectsVolume:"Эффекты",
         classicDnD:"Классический D&D", epic:"Эпический", dark:"Тёмный", humorous:"Юмористический", rulesFirst:"Минималистичный (rules-first)",
         attack:"Атаковать", explore:"Исследовать", negotiate:"Переговоры", useItem:"Использовать предмет", rollCube:"Бросить куб",
         enterAction:"Введите действие...", campaignStart:"Начало кампании", diceRoll:"Бросок куба",
         delete: "Удалить",
+        testSound: "Проверить звук",
         // Added translations
         primary: "Основной",
         secondary: "Вторичный",
@@ -279,6 +283,18 @@
                 go('game');
                 return;
             }
+            // --- Audio Playback Control ---
+            if (message.type === 'play_audio') {
+                if (_audioPlayer) _audioPlayer.play();
+                return; // Not a state change, just a command
+            }
+            if (message.type === 'stop_audio') {
+                if (_audioPlayer) {
+                    _audioPlayer.pause();
+                    _audioPlayer.currentTime = 0; // Reset audio
+                }
+                return; // Not a state change, just a command
+            }
 
             if (message.type === 'error') {
                 state.chatMessages.push({
@@ -293,6 +309,20 @@
 
             // ALL other messages are now full state updates
             if (message.room_code && message.players) {
+                // --- Handle audio path update ---
+                if (message.current_audio_path && (!_audioPlayer || !_audioPlayer.src.includes(message.current_audio_path))) {
+                    // _audioPlayer is initialized in the render() function for the 'game' page
+                    if (_audioPlayer) {
+                        console.log(`Setting new audio source: ${message.current_audio_path}`);
+                        _audioPlayer.src = message.current_audio_path;
+                        _audioPlayer.load(); // Preload the audio
+                    }
+                } else if (message.hasOwnProperty('current_audio_path') && message.current_audio_path === null) {
+                    if (_audioPlayer) {
+                        _audioPlayer.removeAttribute('src'); // Clear src if path is null
+                        _audioPlayer.load();
+                    }
+                }
                 // --- Typing Effect Logic for WebSocket ---
                 const oldHistory = state.sceneHistory || [];
                 const newHistory = message.journal?.entries || [];
@@ -535,22 +565,24 @@
         // Update the local state first
         Object.assign(state, newSettings);
 
+        // If the audio player exists, update its volume immediately
+        if (_audioPlayer && newSettings.audioVolume !== undefined) {
+            _audioPlayer.volume = newSettings.audioVolume / 100;
+        }
+
         // Always save and send the full settings object
         const settingsToSave = {
             theme: state.theme,
             language: state.language,
-            customTheme: state.customTheme
+            customTheme: state.customTheme,
+            audioVolume: state.audioVolume,
         };
 
         try {
-            Object.assign(state, newSettings);
-            storage.saveSettings({
-                theme: state.theme,
-                language: state.language,
-                customTheme: state.customTheme
-            });
-            applyTheme();
+            storage.saveSettings(settingsToSave);
+            applyTheme(); // This is for theme changes, but safe to call
 
+            // We can debounce this in a real app, but for now, save on every change
             await api.updateSettings(settingsToSave);
             console.log("Settings saved to server successfully.");
 
@@ -998,7 +1030,8 @@
                 <button id="backToLobby" class="text-[var(--primary)] hover:text-[var(--primary)]/80">← ${t('back')}</button>
                 <h1 class="text-2xl font-bold">${state.currentRoom?.name || t('campaignName')}</h1>
               </div>
-              <div class="flex items-center space-x-4">
+              <div class="flex items-center space-x-4" id="audioControls">
+                <!-- Audio controls are rendered here by render() -->
               </div>
             </div>
 
@@ -1114,6 +1147,7 @@
             </div>
           </div>
           <div id="modals"></div>
+          <audio id="ttsPlayer" style="display: none;"></audio>
         </div>`; },
 
       settings(){ const presets=themePresets(); return `
@@ -1153,8 +1187,13 @@
                 <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
                   <h3 class="text-2xl font-semibold mb-4">${t('sound')}</h3>
                   <div class="space-y-4">
-                    <div class="flex justify-between items-center"><span>${t('mainVolume')}</span><input type="range" class="w-40" min="0" max="100"></div>
-                    <div class="flex justify-between items-center"><span>${t('effectsVolume')}</span><input type="range" class="w-40" min="0" max="100"></div>
+                    <div class="flex justify-between items-center">
+                      <span>${t('mainVolume')}</span>
+                      <input id="audioVolumeSlider" type="range" class="w-40" min="0" max="100" value="${state.audioVolume}">
+                    </div>
+                    <div class="text-center mt-4">
+                      <button id="testSoundBtn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">${t('testSound')}</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1392,6 +1431,34 @@
                 break;
 
             case 'game':
+                // --- Initialize Audio Player ---
+                if (!_audioPlayer) {
+                    _audioPlayer = document.getElementById('ttsPlayer');
+                    if (_audioPlayer) {
+                        _audioPlayer.volume = state.audioVolume / 100;
+                    }
+                }
+
+                // --- Host Audio Controls ---
+                const audioControlsContainer = document.getElementById('audioControls');
+                if (audioControlsContainer && state.currentRoom && state.user && state.currentRoom.host_user_code === state.user.user_code) {
+                    audioControlsContainer.innerHTML = `
+                        <button id="playAudioBtn" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-full">
+                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4.516 3.87A1.5 1.5 0 003 5.065v9.87a1.5 1.5 0 002.24 1.336l6.5-4.935a1.5 1.5 0 000-2.672l-6.5-4.935A1.5 1.5 0 004.516 3.87z"></path></svg>
+                        </button>
+                        <button id="stopAudioBtn" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-full">
+                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4.5A1.5 1.5 0 003.5 6v8A1.5 1.5 0 005 15.5h10a1.5 1.5 0 001.5-1.5V6A1.5 1.5 0 0015 4.5H5z"></path></svg>
+                        </button>
+                    `;
+                    addListener('playAudioBtn', 'click', () => {
+                        if (state.ws) state.ws.send(JSON.stringify({ type: 'play_audio' }));
+                    });
+                    addListener('stopAudioBtn', 'click', () => {
+                        if (state.ws) state.ws.send(JSON.stringify({ type: 'stop_audio' }));
+                    });
+                }
+
+
                 // In-game chat
                 const chatInput = document.getElementById('chatInput');
                 const chatSendButton = document.getElementById('chatSend');
@@ -1494,6 +1561,14 @@
                 break;
 
             case 'settings':
+                addListener('audioVolumeSlider', 'input', (e) => {
+                    handleSaveSettings({ audioVolume: parseInt(e.target.value, 10) });
+                });
+                addListener('testSoundBtn', 'click', () => {
+                    const testPlayer = new Audio('/sound/test.wav');
+                    testPlayer.volume = state.audioVolume / 100;
+                    testPlayer.play();
+                });
                 document.querySelectorAll('input[name="language"]').forEach(radio => {
                     radio.addEventListener('change', (e) => {
                         handleSaveSettings({ language: e.target.value });
@@ -1825,6 +1900,7 @@
         state.theme = savedSettings.theme || 'dark';
         state.language = savedSettings.language || 'ru';
         state.customTheme = savedSettings.customTheme || { primary: '#ff4500', secondary: '#8b0000', background: '#000000' };
+        state.audioVolume = savedSettings.audioVolume !== undefined ? savedSettings.audioVolume : 100;
       }
 
       const userCode = storage.getUserCode();

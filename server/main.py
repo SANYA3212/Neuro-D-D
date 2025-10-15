@@ -176,7 +176,7 @@ ensure_game_rule_file()
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from server.api import auth, users, rooms, campaigns, dice, ai
+from server.api import auth, users, rooms, campaigns, dice, ai, sound
 from server.core.config import ROOT_DIR
 
 # --- App Initialization ---
@@ -204,6 +204,7 @@ app.include_router(rooms.router, prefix="/api")
 app.include_router(campaigns.router, prefix="/api")
 app.include_router(dice.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
+app.include_router(sound.router, prefix="/api")
 
 
 # --- Health Check Endpoint ---
@@ -220,6 +221,10 @@ assets_path = ROOT_DIR / "frontend/assets"
 assets_path.mkdir(exist_ok=True) # Ensure the assets directory exists
 (assets_path / "avatars").mkdir(exist_ok=True) # Ensure the avatars subdirectory exists
 app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+sound_path = ROOT_DIR / "sound"
+sound_path.mkdir(exist_ok=True)
+app.mount("/sound", StaticFiles(directory=sound_path), name="sound")
 
 frontend_path = ROOT_DIR / "frontend"
 app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")

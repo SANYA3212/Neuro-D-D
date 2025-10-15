@@ -130,100 +130,78 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
         while True:
             data = await websocket.receive_json()
             action_taken = False
+            room = storage.find_room_by_code(room_code)
+
+            if not room:
+                # Room might have been deleted, gracefully close connection
+                break
 
             if data.get("type") == "chat":
                 text = data.get("text")
-                if text:
-                    room = storage.find_room_by_code(room_code)
-                    if room and room.get('campaign_id'):
-                        campaign_id = room['campaign_id']
-                        host_user_code = room['host_user_code']
-                        new_message = Message(role=user_code, content=text)
-                        storage.add_lobby_chat_message(host_user_code, campaign_id, new_message)
-                        action_taken = True
+                if text and room.get('campaign_id'):
+                    campaign_id = room['campaign_id']
+                    host_user_code = room['host_user_code']
+                    new_message = Message(role=user_code, content=text)
+                    storage.add_lobby_chat_message(host_user_code, campaign_id, new_message)
+                    action_taken = True
 
             elif data.get("type") == "player_ready":
                 storage.toggle_player_ready(room_code, user_code)
-                # This is a state-changing event, so we must broadcast.
                 await broadcast_full_room_state(room_code)
-                action_taken = False # We've already handled the broadcast for this action
+                action_taken = False
 
             elif data.get("type") == "start_game":
-                room = storage.find_room_by_code(room_code)
-                if room and room.get('host_user_code') == user_code:
-                    # Re-fetch room details to ensure we have the latest ready_players list
+                if room.get('host_user_code') == user_code:
                     current_room_state = await get_room_details_logic(room_code)
                     if current_room_state and set(p.user_code for p in current_room_state.players) == set(current_room_state.ready_players):
-                        storage.clear_turn_data(room_code) # Clear previous turn data on new game start
+                        storage.clear_turn_data(room_code)
                         await manager.broadcast({"type": "game_starting"}, room_code)
-                        # We MUST trigger a state broadcast after this, so we set action_taken to True
-                        action_taken = True
+                        action_taken = True  # Broadcast state after starting
                     else:
-                        # Optional: Send an error message back to the host
-                        error_message = {
-                            "type": "error",
-                            "detail": "Not all players are ready."
-                        }
-                        await websocket.send_json(jsonable_encoder(error_message))
+                        await websocket.send_json(jsonable_encoder({"type": "error", "detail": "Not all players are ready."}))
                         action_taken = False
                 else:
-                    # Optional: Send an error message back to the user who is not the host
-                    error_message = {
-                        "type": "error",
-                        "detail": "Only the host can start the game."
-                    }
-                    await websocket.send_json(jsonable_encoder(error_message))
+                    await websocket.send_json(jsonable_encoder({"type": "error", "detail": "Only the host can start the game."}))
                     action_taken = False
 
             elif data.get("type") == "player_turn_ready":
-                turn_data = {
-                    "action": data.get("action"),
-                    "dice_roll": data.get("dice_roll")
-                }
+                turn_data = {"action": data.get("action"), "dice_roll": data.get("dice_roll")}
                 storage.record_player_turn(room_code, user_code, turn_data)
                 action_taken = True
 
             elif data.get("type") == "host_send_turn":
-                room = storage.find_room_by_code(room_code)
-                if room and room.get('host_user_code') == user_code:
-                    # Check if all players are ready for the turn
+                if room.get('host_user_code') == user_code:
                     current_room_state = await get_room_details_logic(room_code)
                     if current_room_state and set(p.user_code for p in current_room_state.players) == set(current_room_state.ready_players_turn):
                         try:
-                            # This triggers the AI call, which itself will save the journal
-                            # and handle state changes.
                             await _get_ai_completion_logic(room_code, user_code)
-                            # The AI logic now handles clearing turns and broadcasting the final state.
-                            action_taken = False
                         except HTTPException as e:
-                            # If the AI logic raises a known error (like no turns),
-                            # send it as a specific WS message instead of crashing.
-                            error_message = {
-                                "type": "error",
-                                "detail": e.detail
-                            }
-                            await manager.broadcast(jsonable_encoder(error_message), room_code)
-                            action_taken = False
+                            await manager.broadcast(jsonable_encoder({"type": "error", "detail": e.detail}), room_code)
                     else:
-                        # Log to journal and broadcast, but don't send a direct error message
-                        room_details = await get_room_details_logic(room_code)
-                        if room_details and room_details.campaign_id:
+                        if current_room_state and current_room_state.campaign_id:
                             storage.add_lobby_chat_message(
-                                room_details.host_user_code,
-                                room_details.campaign_id,
+                                current_room_state.host_user_code,
+                                current_room_state.campaign_id,
                                 Message(role='system', content="Host tried to advance turn, but not all players were ready.")
                             )
-                            action_taken = True # Triggers a broadcast of the updated journal
+                            action_taken = True
+                action_taken = False
 
+            elif data.get("type") == "play_audio":
+                if room.get('host_user_code') == user_code:
+                    await manager.broadcast({"type": "play_audio"}, room_code)
+                action_taken = False
+
+            elif data.get("type") == "stop_audio":
+                if room.get('host_user_code') == user_code:
+                    await manager.broadcast({"type": "stop_audio"}, room_code)
+                action_taken = False
 
             if action_taken:
-                # If any state-changing action was taken, broadcast the new canonical state
                 await broadcast_full_room_state(room_code)
 
     except WebSocketDisconnect:
-        print(f"WS connection closed for {user_code} in {room_code}") # DEBUG
+        print(f"WS connection closed for {user_code} in {room_code}")
         manager.disconnect(websocket, room_code)
-        # Remove player from the room's list in storage
         storage.remove_player_from_room(room_code, user_code)
-        # Broadcast the updated state to the remaining clients
         await broadcast_full_room_state(room_code)

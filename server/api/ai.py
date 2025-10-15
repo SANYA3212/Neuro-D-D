@@ -11,6 +11,7 @@ from server.core.models import (
 )
 from server.api.auth import get_current_user_code
 from server.game_logic.engine import get_room_details_logic
+from sound.tts import synthesize_text # Import the TTS function
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -208,12 +209,25 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
         storage.clear_turn_data(room_code)
 
         # Always broadcast the final state after a turn is processed.
-        room = storage.find_room_by_campaign_id(str(campaign_meta.id))
-        if room:
-            print(f"BROADCASTING final state to room {room['room_code']}.")
-            updated_room_details = await get_room_details_logic(room['room_code'])
+        room_for_broadcast = storage.find_room_by_campaign_id(str(campaign_meta.id))
+        if room_for_broadcast:
+            print(f"BROADCASTING final state to room {room_for_broadcast['room_code']}.")
+            updated_room_details = await get_room_details_logic(room_for_broadcast['room_code'])
             if updated_room_details:
-                await manager.broadcast(jsonable_encoder(updated_room_details), room['room_code'])
+                # --- Generate TTS and add to broadcast ---
+                details_dict = jsonable_encoder(updated_room_details)
+                try:
+                    # Synthesize audio from the AI's narrative text
+                    audio_path = await synthesize_text(parsed_response.text)
+                    if audio_path:
+                        details_dict['current_audio_path'] = audio_path
+                        print(f"Generated TTS audio: {audio_path}")
+                except Exception as e:
+                    # Log the error but don't block the game flow
+                    print(f"WARNING: TTS audio generation failed: {e}")
+                    details_dict['current_audio_path'] = None # Ensure it's not stale
+
+                await manager.broadcast(details_dict, room_for_broadcast['room_code'])
 
         return parsed_response
 

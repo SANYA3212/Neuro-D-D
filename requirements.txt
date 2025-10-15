@@ -6,3 +6,13 @@ python-dotenv
 google-generativeai
 python-multipart
 # python-multipart is a dependency of fastapi for form data, good to have it explicit.
+
+# TTS dependencies
+torch
+numpy
+soundfile
+sounddevice
+scipy
+omegaconf
+noisereduce
+deepfilternet

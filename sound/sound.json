@@ -1,0 +1,22 @@
+{
+  "tts_settings": {
+    "speaker": "aidar",
+    "sample_rate": 48000,
+    "put_accent": true,
+    "put_yo": true
+  },
+  "post_processing": {
+    "enable": true,
+    "use_dfn": true,
+    "use_nr": true,
+    "fade_ms": 20,
+    "lp_cutoff": 9000,
+    "smooth_k": 5
+  },
+  "effects": {
+    "gain_db": 0.0,
+    "speed": 1.0,
+    "pre_sil_ms": 0,
+    "post_sil_ms": 0
+  }
+}
