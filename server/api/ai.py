@@ -111,7 +111,7 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
                 roll_str += f" * d{multiplier.get('sides')} → **{multiplier.get('result')}**"
             roll_str += f" = **{final_result}**]"
 
-        turn_summary.append(f"- **{player_name}**: {action}{roll_str}")
+        turn_summary.append(f"- **{player_name}**: Вы пытаетесь {action}{roll_str}")
 
     full_prompt_context = f"""
 {system_prompt}
