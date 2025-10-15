@@ -176,7 +176,7 @@ ensure_game_rule_file()
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from server.api import auth, users, rooms, campaigns, dice, ai, sound
+from server.api import auth, users, rooms, campaigns, dice, ai
 from server.core.config import ROOT_DIR
 
 # --- App Initialization ---
@@ -204,7 +204,7 @@ app.include_router(rooms.router, prefix="/api")
 app.include_router(campaigns.router, prefix="/api")
 app.include_router(dice.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
-app.include_router(sound.router, prefix="/api")
+
 
 
 # --- Health Check Endpoint ---

@@ -192,9 +192,9 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, user_code: st
                     await manager.broadcast({"type": "play_audio"}, room_code)
                 action_taken = False
 
-            elif data.get("type") == "stop_audio":
+            elif data.get("type") == "pause_audio":
                 if room.get('host_user_code') == user_code:
-                    await manager.broadcast({"type": "stop_audio"}, room_code)
+                    await manager.broadcast({"type": "pause_audio"}, room_code)
                 action_taken = False
 
             if action_taken:

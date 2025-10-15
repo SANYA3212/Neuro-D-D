@@ -39,6 +39,36 @@
         display: inline-block;
         animation: charFadeIn 0.3s ease-in-out;
     }
+    /* Custom Range Slider */
+    .custom-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 8px;
+      background: #4a4a4a;
+      outline: none;
+      opacity: 0.7;
+      transition: opacity .2s;
+      border-radius: 4px;
+    }
+    .custom-slider:hover { opacity: 1; }
+    .custom-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      background: var(--primary);
+      cursor: pointer;
+      border-radius: 50%;
+      border: 2px solid var(--background);
+    }
+    .custom-slider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      background: var(--primary);
+      cursor: pointer;
+      border-radius: 50%;
+      border: 2px solid var(--background);
+    }
   </style>
 </head>
 <body class="min-h-screen">
@@ -182,6 +212,7 @@
         enterAction:"Введите действие...", campaignStart:"Начало кампании", diceRoll:"Бросок куба",
         delete: "Удалить",
         testSound: "Проверить звук",
+        support: "Поддержка",
         // Added translations
         primary: "Основной",
         secondary: "Вторичный",
@@ -288,20 +319,18 @@
                 if (_audioPlayer) _audioPlayer.play();
                 return; // Not a state change, just a command
             }
-            if (message.type === 'stop_audio') {
+            if (message.type === 'pause_audio') {
                 if (_audioPlayer) {
                     _audioPlayer.pause();
-                    _audioPlayer.currentTime = 0; // Reset audio
                 }
                 return; // Not a state change, just a command
             }
 
             if (message.type === 'error') {
-                state.chatMessages.push({
-                    id: Date.now(),
-                    text: `Ошибка от сервера: ${message.detail}`,
-                    sender: 'system',
-                    timestamp: new Date().toLocaleTimeString()
+                // Log errors to the main scene/journal instead of chat
+                state.sceneHistory.push({
+                    role: 'system',
+                    content: `**Ошибка от сервера:** ${message.detail}`
                 });
                 render();
                 return;
@@ -832,6 +861,10 @@
                   </div>`).join('')}
               </div>
             </div>
+
+            <div class="text-center mt-16">
+                <button id="supportBtn" class="text-gray-400 hover:text-white transition-colors">${t('support')}</button>
+            </div>
           </div>
         </div>`; },
 
@@ -1189,7 +1222,7 @@
                   <div class="space-y-4">
                     <div class="flex justify-between items-center">
                       <span>${t('mainVolume')}</span>
-                      <input id="audioVolumeSlider" type="range" class="w-40" min="0" max="100" value="${state.audioVolume}">
+                      <input id="audioVolumeSlider" type="range" class="w-40 custom-slider" min="0" max="100" value="${state.audioVolume}">
                     </div>
                     <div class="text-center mt-4">
                       <button id="testSoundBtn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">${t('testSound')}</button>
@@ -1308,6 +1341,13 @@
 
         // --- Page-Specific Logic ---
         switch (state.currentPage) {
+            case 'landing':
+                addListener('supportBtn', 'click', () => {
+                    const supportAudio = new Audio('/sound/meme.wav');
+                    supportAudio.volume = state.audioVolume / 100;
+                    supportAudio.play();
+                });
+                break;
             case 'login':
                 const loginForm = document.getElementById('loginForm');
                 if (loginForm) loginForm.addEventListener('submit', (e) => { e.preventDefault(); handleLogin(loginForm); });
@@ -1443,18 +1483,18 @@
                 const audioControlsContainer = document.getElementById('audioControls');
                 if (audioControlsContainer && state.currentRoom && state.user && state.currentRoom.host_user_code === state.user.user_code) {
                     audioControlsContainer.innerHTML = `
-                        <button id="playAudioBtn" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-full">
-                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4.516 3.87A1.5 1.5 0 003 5.065v9.87a1.5 1.5 0 002.24 1.336l6.5-4.935a1.5 1.5 0 000-2.672l-6.5-4.935A1.5 1.5 0 004.516 3.87z"></path></svg>
+                        <button id="playAudioBtn" class="p-2 bg-gray-800 hover:bg-gray-700 rounded-full w-10 h-10 flex items-center justify-center transition-colors">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M4.516 3.87A1.5 1.5 0 003 5.065v9.87a1.5 1.5 0 002.24 1.336l6.5-4.935a1.5 1.5 0 000-2.672l-6.5-4.935A1.5 1.5 0 004.516 3.87z"></path></svg>
                         </button>
-                        <button id="stopAudioBtn" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-full">
-                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4.5A1.5 1.5 0 003.5 6v8A1.5 1.5 0 005 15.5h10a1.5 1.5 0 001.5-1.5V6A1.5 1.5 0 0015 4.5H5z"></path></svg>
+                        <button id="pauseAudioBtn" class="p-2 bg-gray-800 hover:bg-gray-700 rounded-full w-10 h-10 flex items-center justify-center transition-colors">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 4.5a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5V5a.5.5 0 00-.5-.5H5zm8 0a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5V5a.5.5 0 00-.5-.5h-2z" clip-rule="evenodd"></path></svg>
                         </button>
                     `;
                     addListener('playAudioBtn', 'click', () => {
                         if (state.ws) state.ws.send(JSON.stringify({ type: 'play_audio' }));
                     });
-                    addListener('stopAudioBtn', 'click', () => {
-                        if (state.ws) state.ws.send(JSON.stringify({ type: 'stop_audio' }));
+                    addListener('pauseAudioBtn', 'click', () => {
+                        if (state.ws) state.ws.send(JSON.stringify({ type: 'pause_audio' }));
                     });
                 }
 

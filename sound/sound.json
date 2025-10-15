@@ -6,7 +6,7 @@
     "put_yo": true
   },
   "post_processing": {
-    "enable": true,
+    "enable": false,
     "use_dfn": true,
     "use_nr": true,
     "fade_ms": 20,
