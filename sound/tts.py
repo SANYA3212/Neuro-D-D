@@ -3,7 +3,7 @@ import json
 import uuid
 import datetime as dt
 from pathlib import Path
-
+import re
 import numpy as np
 import torch
 import soundfile as sf
@@ -46,6 +46,19 @@ def _load_settings():
         raise FileNotFoundError(f"Settings file not found at {SETTINGS_FILE}")
     with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+def _split_text(text: str, max_words=15):
+    """Splits text into sentences, and further into chunks of max_words."""
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks = []
+    for sentence in sentences:
+        words = sentence.split()
+        if len(words) > max_words:
+            for i in range(0, len(words), max_words):
+                chunks.append(' '.join(words[i:i+max_words]))
+        elif words:
+            chunks.append(sentence)
+    return chunks
 
 # --- DSP Blocks ---
 def _normalize(audio: np.ndarray, eps: float = 1e-6) -> np.ndarray:
@@ -164,50 +177,59 @@ def _postprocess_audio(audio: np.ndarray, sr: int, pp_settings: dict) -> np.ndar
 async def synthesize_text(text: str) -> str:
     """
     Main function to synthesize text to an audio file.
-    Loads settings, ensures model is loaded, runs TTS, post-processes,
-    and saves the file.
-    Returns the web-accessible path to the audio file.
+    Splits long text into chunks, synthesizes them, and concatenates the audio.
     """
     try:
+        OUTPUTS_DIR.mkdir(exist_ok=True)
         settings = _load_settings()
         tts_settings = settings.get('tts_settings', {})
         pp_settings = settings.get('post_processing', {})
         effects = settings.get('effects', {})
+        sample_rate = tts_settings.get('sample_rate', 48000)
 
         _ensure_model_loaded()
 
-        # Limit threads to avoid overwhelming the CPU on servers
         torch.set_num_threads(max(1, os.cpu_count() // 2))
 
-        audio = _tts_model.apply_tts(
-            text=text.strip(),
-            speaker=tts_settings.get('speaker', 'aidar'),
-            sample_rate=tts_settings.get('sample_rate', 48000),
-            put_accent=tts_settings.get('put_accent', True),
-            put_yo=tts_settings.get('put_yo', True)
-        ).cpu().numpy().astype(np.float32)
+        text_chunks = _split_text(text)
+        audio_chunks = []
 
-        sample_rate = tts_settings.get('sample_rate', 48000)
+        for chunk in text_chunks:
+            if not chunk.strip():
+                continue
 
-        # Apply effects
-        audio = _time_stretch_linear(audio, effects.get('speed', 1.0))
-        audio = _prepend_append_silence(audio, sample_rate, effects.get('pre_sil_ms', 0), effects.get('post_sil_ms', 0))
-        audio = _apply_volume_gain(audio, effects.get('gain_db', 0.0))
+            audio = _tts_model.apply_tts(
+                text=chunk.strip(),
+                speaker=tts_settings.get('speaker', 'aidar'),
+                sample_rate=sample_rate,
+                put_accent=tts_settings.get('put_accent', True),
+                put_yo=tts_settings.get('put_yo', True)
+            ).cpu().numpy().astype(np.float32)
+            audio_chunks.append(audio)
 
-        # Post-process
-        audio = _postprocess_audio(audio, sample_rate, pp_settings)
+        if not audio_chunks:
+            # Return a path to a silent audio file or handle it as an error
+            return None
+
+        # Concatenate all audio chunks
+        full_audio = np.concatenate(audio_chunks)
+
+        # Apply effects to the full audio
+        full_audio = _time_stretch_linear(full_audio, effects.get('speed', 1.0))
+        full_audio = _prepend_append_silence(full_audio, sample_rate, effects.get('pre_sil_ms', 0), effects.get('post_sil_ms', 0))
+        full_audio = _apply_volume_gain(full_audio, effects.get('gain_db', 0.0))
+
+        # Post-process the full audio
+        full_audio = _postprocess_audio(full_audio, sample_rate, pp_settings)
 
         # Save to file
-        OUTPUTS_DIR.mkdir(exist_ok=True)
         base_name = _random_basename("tts")
         output_path = OUTPUTS_DIR / f"{base_name}.wav"
 
-        sf.write(output_path, audio, sample_rate, format='WAV')
+        sf.write(output_path, full_audio, sample_rate, format='WAV')
 
-        # Return the path that the frontend can use
         return f"/sound/outputs/{base_name}.wav"
 
     except Exception as e:
         print(f"Error during TTS synthesis: {e}")
-        # Re-raise to be caught by the API endpoint
         raise e
