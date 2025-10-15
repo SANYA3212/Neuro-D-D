@@ -93,10 +93,10 @@
       chatMessages: [],
       ws: null,
       gameInputContent: "", // Persist user input across re-renders
-      audioVolume: 100, // Volume for TTS, from 0 to 100
     };
 
     let _audioPlayer = null; // Will hold the Audio object for TTS playback
+    let _testAudioPlayer = null; // Separate player for the test sound button
 
     function processJournal(journal, players) {
         if (!journal || !journal.lobby_chat) return [];
@@ -594,17 +594,11 @@
         // Update the local state first
         Object.assign(state, newSettings);
 
-        // If the audio player exists, update its volume immediately
-        if (_audioPlayer && newSettings.audioVolume !== undefined) {
-            _audioPlayer.volume = newSettings.audioVolume / 100;
-        }
-
         // Always save and send the full settings object
         const settingsToSave = {
             theme: state.theme,
             language: state.language,
             customTheme: state.customTheme,
-            audioVolume: state.audioVolume,
         };
 
         try {
@@ -1220,10 +1214,6 @@
                 <div class="bg-black/50 p-6 rounded-xl border border-gray-800">
                   <h3 class="text-2xl font-semibold mb-4">${t('sound')}</h3>
                   <div class="space-y-4">
-                    <div class="flex justify-between items-center">
-                      <span>${t('mainVolume')}</span>
-                      <input id="audioVolumeSlider" type="range" class="w-40 custom-slider" min="0" max="100" value="${state.audioVolume}">
-                    </div>
                     <div class="text-center mt-4">
                       <button id="testSoundBtn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">${t('testSound')}</button>
                     </div>
@@ -1344,7 +1334,6 @@
             case 'landing':
                 addListener('supportBtn', 'click', () => {
                     const supportAudio = new Audio('/sound/meme.wav');
-                    supportAudio.volume = state.audioVolume / 100;
                     supportAudio.play();
                 });
                 break;
@@ -1474,9 +1463,6 @@
                 // --- Initialize Audio Player ---
                 if (!_audioPlayer) {
                     _audioPlayer = document.getElementById('ttsPlayer');
-                    if (_audioPlayer) {
-                        _audioPlayer.volume = state.audioVolume / 100;
-                    }
                 }
 
                 // --- Host Audio Controls ---
@@ -1601,13 +1587,16 @@
                 break;
 
             case 'settings':
-                addListener('audioVolumeSlider', 'input', (e) => {
-                    handleSaveSettings({ audioVolume: parseInt(e.target.value, 10) });
-                });
                 addListener('testSoundBtn', 'click', () => {
-                    const testPlayer = new Audio('/sound/test.wav');
-                    testPlayer.volume = state.audioVolume / 100;
-                    testPlayer.play();
+                    if (_testAudioPlayer && !_testAudioPlayer.paused) {
+                        _testAudioPlayer.pause();
+                        _testAudioPlayer.currentTime = 0;
+                        _testAudioPlayer = null;
+                    } else {
+                        _testAudioPlayer = new Audio('/sound/test.wav');
+                        _testAudioPlayer.play();
+                        _testAudioPlayer.onended = () => { _testAudioPlayer = null; };
+                    }
                 });
                 document.querySelectorAll('input[name="language"]').forEach(radio => {
                     radio.addEventListener('change', (e) => {
@@ -1940,7 +1929,6 @@
         state.theme = savedSettings.theme || 'dark';
         state.language = savedSettings.language || 'ru';
         state.customTheme = savedSettings.customTheme || { primary: '#ff4500', secondary: '#8b0000', background: '#000000' };
-        state.audioVolume = savedSettings.audioVolume !== undefined ? savedSettings.audioVolume : 100;
       }
 
       const userCode = storage.getUserCode();
