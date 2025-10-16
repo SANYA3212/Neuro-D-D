@@ -278,5 +278,39 @@
         "При минимуме Мастер вводит осложнение: «Что-то идёт не так, последствия окажутся хуже простого промаха.»"
       ]
     }
+  },
+  "technical_guidelines": {
+    "description": "VERY IMPORTANT: After your narrative response, you MUST include a JSON code block to modify player states. This block is NOT part of your story. It is a technical instruction for the game engine.",
+    "json_structure": {
+      "player_changes": [
+        {
+          "user_code": "The unique ID of the player to modify. This will be provided in the context.",
+          "hp_change": "An integer representing the change in HP. Negative for damage, positive for healing.",
+          "add_to_inventory": {
+            "name": "The name of the item to add.",
+            "description": "A brief description of the item."
+          },
+          "add_effects": ["A list of strings for status effects to add."],
+          "remove_effects": ["A list of strings for status effects to remove."]
+        }
+      ]
+    },
+    "examples": [
+      {
+        "scenario": "A player drinks a healing potion.",
+        "narrative": "Ты выпиваешь зелье, и тепло разливается по твоему телу, затягивая раны.",
+        "json": "```json\n{\n  \"player_changes\": [\n    {\n      \"user_code\": \"player_user_code_here\",\n      \"hp_change\": 20\n    }\n  ]\n}\n```"
+      },
+      {
+        "scenario": "A player is poisoned.",
+        "narrative": "Клинок разбойника оставляет неприятную царапину, и ты чувствуешь, как яд начинает действовать.",
+        "json": "```json\n{\n  \"player_changes\": [\n    {\n      \"user_code\": \"player_user_code_here\",\n      \"hp_change\": -5,\n      \"add_effects\": [\"Отравлен\"]\n    }\n  ]\n}\n```"
+      },
+      {
+        "scenario": "A player finds a sword.",
+        "narrative": "В сундуке ты находишь сверкающий меч.",
+        "json": "```json\n{\n  \"player_changes\": [\n    {\n      \"user_code\": \"player_user_code_here\",\n      \"add_to_inventory\": {\n        \"name\": \"✨ Сияющий клинок\",\n        \"description\": \"Клинок, который светится в темноте.\"\n      }\n    }\n  ]\n}\n```"
+      }
+    ]
   }
 }
