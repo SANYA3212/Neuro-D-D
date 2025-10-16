@@ -182,23 +182,44 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
 
 
         if meta:
-            # Handle HP changes
-            hp_change = meta.get("hp_change")
-            if isinstance(hp_change, int):
-                player_state = campaign_meta.player_states.get(user_code)
-                if player_state:
-                    player_state.hp = max(0, player_state.hp + hp_change)
-                    state_changed = True
+            # --- Handle State Changes for players ---
+            player_changes = meta.get("player_changes")
+            if isinstance(player_changes, list):
+                for change in player_changes:
+                    target_user_code = change.get("user_code")
+                    if not target_user_code:
+                        continue # Skip if no target is specified
 
-            # Handle adding item to inventory
-            item_data = meta.get("add_to_inventory")
-            if isinstance(item_data, dict):
-                player_state = campaign_meta.player_states.get(user_code)
-                if player_state:
-                    # Make sure we don't add duplicate items if the AI makes a mistake
-                    if not any(item.name == item_data.get("name") for item in player_state.inventory):
-                        new_item = GameItem(**item_data)
-                        player_state.inventory.append(new_item)
+                    player_state = campaign_meta.player_states.get(target_user_code)
+                    if not player_state:
+                        continue # Skip if target player not found
+
+                    # Handle HP changes
+                    hp_change = change.get("hp_change")
+                    if isinstance(hp_change, int):
+                        player_state.hp = max(0, player_state.hp + hp_change)
+                        state_changed = True
+
+                    # Handle adding item to inventory
+                    item_data = change.get("add_to_inventory")
+                    if isinstance(item_data, dict):
+                         if not any(item.name == item_data.get("name") for item in player_state.inventory):
+                            new_item = GameItem(**item_data)
+                            player_state.inventory.append(new_item)
+                            state_changed = True
+
+                    # Handle adding effects
+                    add_effects = change.get("add_effects")
+                    if isinstance(add_effects, list):
+                        for effect in add_effects:
+                            if effect not in player_state.effects:
+                                player_state.effects.append(effect)
+                        state_changed = True
+
+                    # Handle removing effects
+                    remove_effects = change.get("remove_effects")
+                    if isinstance(remove_effects, list):
+                        player_state.effects = [e for e in player_state.effects if e not in remove_effects]
                         state_changed = True
 
         if state_changed:

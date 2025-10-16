@@ -35,9 +35,10 @@ class GameItem(BaseModel):
 
 class PlayerState(BaseModel):
     """Represents the state of a player within a campaign (e.g., HP, status effects)."""
-    hp: int = 20
-    max_hp: int = 20
+    hp: int = 100
+    max_hp: int = 100
     inventory: List[GameItem] = Field(default_factory=list)
+    effects: List[str] = Field(default_factory=list)
 
 class CampaignMeta(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -89,6 +90,7 @@ class PlayerInfo(BaseModel):
     hp: int
     max_hp: int
     inventory: List[GameItem] = Field(default_factory=list)
+    effects: List[str] = Field(default_factory=list)
 
 # Auth
 class RegisterRequest(BaseModel):

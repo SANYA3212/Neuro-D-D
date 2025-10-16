@@ -1818,6 +1818,9 @@
                 const avatarDisplay = p.avatar_url
                     ? `<img src="${p.avatar_url}" alt="Avatar" class="w-12 h-12 rounded-full object-cover">`
                     : `<div class="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-700 rounded-full flex items-center justify-center text-lg font-bold">${(p.username || '?').charAt(0).toUpperCase()}</div>`;
+                const effectsHTML = p.effects && p.effects.length > 0
+                    ? `<div class="mt-2 text-xs text-yellow-400">${p.effects.join(', ')}</div>`
+                    : '';
 
                 return `
                 <div class="p-3 bg-gray-800/50 rounded-lg border ${isReady ? 'border-green-500/50' : 'border-transparent'}">
@@ -1835,6 +1838,7 @@
                       <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-2.5 rounded-full" style="width: ${hpPercentage}%"></div>
                     </div>
                     <div class="text-xs text-gray-400 mt-1 text-right">${p.hp} / ${p.max_hp} HP</div>
+                    ${effectsHTML}
                 </div>
                 `
             }).join('')}
