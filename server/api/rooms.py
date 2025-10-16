@@ -84,10 +84,11 @@ async def join_room(
 
     if room.campaign_id:
         host_user_code = room.host_user_code
-        campaign_meta = storage.get_campaign_meta(host_user_code, room.campaign_id)
-        if campaign_meta and user_code not in campaign_meta.player_states:
-            campaign_meta.player_states[user_code] = PlayerState()
-            storage.update_campaign_meta(host_user_code, room.campaign_id, campaign_meta.dict())
+        # Check if a player state file already exists. If not, create one.
+        player_state = storage.get_player_state(host_user_code, room.campaign_id, user_code)
+        if not player_state:
+            new_player_state = PlayerState()
+            storage.write_player_state(host_user_code, room.campaign_id, user_code, new_player_state)
 
     # After a player joins, broadcast the new state to everyone in the room
     # This ensures clients that are already connected via WebSocket get the update.

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from server.core import storage
 from server.core.models import (
     CreateCampaignRequest, CampaignMeta, CampaignJournal, Message,
-    CampaignDetailsResponse, AddJournalEntryRequest
+    CampaignDetailsResponse, AddJournalEntryRequest, PlayerState
 )
 from server.api.auth import get_current_user_code
 from server.core import connections, storage
@@ -47,6 +47,10 @@ async def create_campaign(
     journal_path = storage.get_campaign_journal_file(user_code, str(new_campaign_meta.id))
     initial_journal = CampaignJournal()
     storage.write_json(journal_path, initial_journal.dict())
+
+    # Create and save initial player state for the host
+    host_player_state = PlayerState()
+    storage.write_player_state(user_code, str(new_campaign_meta.id), user_code, host_player_state)
 
     return new_campaign_meta
 

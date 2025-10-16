@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from server.game_logic import dice, engine
-from server.core.models import UserProfile, RoomDetailsResponse
+from server.core.models import RoomDetailsResponse, UserProfile, PlayerState
 
 def test_dice_roll():
     for sides in dice.VALID_DICE_SIDES:
@@ -50,6 +50,7 @@ def test_seeded_d100_roll():
     assert result1 == result2
 
 @pytest.mark.asyncio
+@patch('server.game_logic.engine.storage.get_player_state')
 @patch('server.game_logic.engine.storage.get_user_profile_by_code')
 @patch('server.game_logic.engine.storage.read_json')
 @patch('server.game_logic.engine.storage.get_campaign_journal_file')
@@ -60,7 +61,8 @@ async def test_get_room_details_logic_smoke_test(
     mock_get_campaign_meta_file,
     mock_get_campaign_journal_file,
     mock_read_json,
-    mock_get_user_profile_by_code
+        mock_get_user_profile_by_code,
+        mock_get_player_state
 ):
     """
     Smoke test for get_room_details_logic to ensure it runs without errors
@@ -82,18 +84,9 @@ async def test_get_room_details_logic_smoke_test(
     mock_get_campaign_meta_file.return_value = "path/to/meta.json"
     mock_get_campaign_journal_file.return_value = "path/to/journal.json"
 
-    # Mock different return values for meta and journal
     def read_json_side_effect(path):
         if "meta" in path:
-            return {
-                "id": campaign_id,
-                "name": "Test Campaign",
-                "host_user_code": host_code,
-                "player_states": {
-                    host_code: {"hp": 15, "max_hp": 20, "inventory": []},
-                    player_code: {"hp": 18, "max_hp": 20, "inventory": []}
-                }
-            }
+                return {"id": campaign_id, "name": "Test Campaign", "host_user_code": host_code}
         if "journal" in path:
             return {"entries": []}
         return None
@@ -106,6 +99,14 @@ async def test_get_room_details_logic_smoke_test(
             return UserProfile(user_code=player_code, username="Player", email="player@test.com", hashed_password="pw")
         return None
     mock_get_user_profile_by_code.side_effect = get_profile_side_effect
+
+    def get_player_state_side_effect(host_code_arg, campaign_id_arg, player_code_arg):
+        if player_code_arg == host_code:
+            return PlayerState(hp=15, max_hp=20, inventory=[])
+        if player_code_arg == player_code:
+            return PlayerState(hp=18, max_hp=20, inventory=[])
+        return None
+    mock_get_player_state.side_effect = get_player_state_side_effect
 
     # --- Test Execution ---
     result = await engine.get_room_details_logic(room_code)

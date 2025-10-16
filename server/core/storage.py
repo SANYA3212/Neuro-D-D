@@ -48,6 +48,20 @@ def get_campaign_journal_file(user_code: str, campaign_id: str) -> Optional[Path
     except ValueError:
         return None
 
+def get_player_state_file(host_user_code: str, campaign_id: str, player_user_code: str) -> Optional[Path]:
+    """Returns the path to a player's state file within a campaign."""
+    try:
+        uuid.UUID(campaign_id)
+        uuid.UUID(player_user_code)
+        campaign_dir = get_campaign_dir(host_user_code, campaign_id)
+        if not campaign_dir:
+            return None
+
+        player_states_dir = campaign_dir / "player_states"
+        return player_states_dir / f"{player_user_code}.json"
+    except ValueError:
+        return None
+
 # --- Generic Read/Write with Locking ---
 
 def read_json(file_path: Path) -> Optional[Any]:
@@ -106,6 +120,25 @@ def add_user_to_index(user_profile: UserProfile):
         "username": user_profile.username
     }
     write_json(config.INDEX_FILE, index)
+
+
+# --- Player State Management ---
+
+def get_player_state(host_user_code: str, campaign_id: str, player_user_code: str) -> Optional['PlayerState']:
+    """Reads a player's state file and returns a PlayerState object."""
+    from .models import PlayerState
+    state_path = get_player_state_file(host_user_code, campaign_id, player_user_code)
+    if state_path:
+        state_data = read_json(state_path)
+        if state_data:
+            return PlayerState(**state_data)
+    return None
+
+def write_player_state(host_user_code: str, campaign_id: str, player_user_code: str, state: 'PlayerState'):
+    """Writes a PlayerState object to a player's state file."""
+    state_path = get_player_state_file(host_user_code, campaign_id, player_user_code)
+    if state_path:
+        write_json(state_path, state.dict())
 
 
 # --- Campaign Management ---

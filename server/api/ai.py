@@ -182,17 +182,16 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
 
 
         if meta:
-            # --- Handle State Changes for players ---
             player_changes = meta.get("player_changes")
             if isinstance(player_changes, list):
                 for change in player_changes:
                     target_user_code = change.get("user_code")
                     if not target_user_code:
-                        continue # Skip if no target is specified
+                        continue
 
-                    player_state = campaign_meta.player_states.get(target_user_code)
+                    player_state = storage.get_player_state(host_user_code, campaign_id, target_user_code)
                     if not player_state:
-                        continue # Skip if target player not found
+                        continue
 
                     # Handle HP changes
                     hp_change = change.get("hp_change")
@@ -203,7 +202,7 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
                     # Handle adding item to inventory
                     item_data = change.get("add_to_inventory")
                     if isinstance(item_data, dict):
-                         if not any(item.name == item_data.get("name") for item in player_state.inventory):
+                        if not any(item.name == item_data.get("name") for item in player_state.inventory):
                             new_item = GameItem(**item_data)
                             player_state.inventory.append(new_item)
                             state_changed = True
@@ -222,9 +221,8 @@ async def _get_ai_completion_logic(room_code: str, user_code: str):
                         player_state.effects = [e for e in player_state.effects if e not in remove_effects]
                         state_changed = True
 
-        if state_changed:
-            # Save the metadata changes (HP, inventory)
-            storage.update_campaign_meta(campaign_meta.host_user_code, str(campaign_meta.id), campaign_meta.dict())
+                    if state_changed:
+                        storage.write_player_state(host_user_code, campaign_id, target_user_code, player_state)
 
         # After processing, clear the turn data for the next round
         storage.clear_turn_data(room_code)

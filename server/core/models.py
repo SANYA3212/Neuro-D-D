@@ -47,7 +47,6 @@ class CampaignMeta(BaseModel):
     difficulty: str = "medium"
     host_user_code: str
     players: List[str] = []
-    player_states: Dict[str, PlayerState] = Field(default_factory=dict)
     status: str = "active" # e.g., 'active', 'archived', 'completed'
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

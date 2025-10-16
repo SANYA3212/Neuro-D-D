@@ -52,8 +52,8 @@ async def get_room_details_logic(room_code: str) -> Optional[RoomDetailsResponse
         effects = []
 
         # Get player-specific state only if a campaign exists
-        if campaign_meta:
-            player_state = campaign_meta.player_states.get(player_code)
+        if room.campaign_id:
+            player_state = storage.get_player_state(room.host_user_code, room.campaign_id, player_code)
             if player_state:
                 hp = player_state.hp
                 max_hp = player_state.max_hp
